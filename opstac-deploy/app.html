@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0c0e0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OpsTac">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<title>OpsTac — SRT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg: #0c0e0c;
+    --bg-panel: #14170f;
+    --bg-panel-raised: #1a1e15;
+    --line: #262b1f;
+    --steel: #8a8f94;
+    --steel-dim: #5c625f;
+    --olive: #a89968;
+    --olive-bright: #c7b482;
+    --text: #e8e6df;
+    --text-dim: #9aa19b;
+    --good: #6b9a5f;
+    --good-bg: rgba(107,154,95,0.14);
+    --warn: #c99a4a;
+    --warn-bg: rgba(201,154,74,0.14);
+    --bad: #b8564a;
+    --bad-bg: rgba(184,86,74,0.16);
+    --radius: 10px;
+    --radius-sm: 7px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* Theme variables are re-applied at runtime by app.js (see applyTheme()).
+     Editing --olive / --olive-bright here only changes the shipped default. */
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent;}
+  html,body{ height:100%; }
+  body{
+    background: #050605;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display:flex; justify-content:center;
+  }
+  .display{ font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+
+  /* Phone frame — centers + constrains so desktop preview reads as a phone app */
+  .phone{
+    width:100%;
+    max-width: 430px;
+    min-height:100vh;
+    background: var(--bg);
+    position:relative;
+    display:flex; flex-direction:column;
+    box-shadow: 0 0 60px rgba(0,0,0,0.6);
+  }
+
+  /* ---- Top bar ---- */
+  .topbar{
+    padding: calc(14px + var(--safe-top)) 18px 12px;
+    display:flex; align-items:center; justify-content:space-between;
+    border-bottom: 1px solid var(--line);
+    position: sticky; top:0; z-index:20;
+    background: rgba(12,14,12,0.92); backdrop-filter: blur(10px);
+  }
+  .brand-mark{ display:flex; align-items:center; gap:9px; }
+  .brand-logo{ height:22px; width:auto; display:block; }
+  .brand-sub{ font-size:8.5px; letter-spacing:0.13em; color: var(--steel-dim); text-transform:uppercase; margin-top:2px; margin-left:1px; }
+  .top-avatar{
+    width:32px; height:32px; border-radius:50%;
+    background: var(--olive); color:#0c0e0c;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700;
+    border: none;
+  }
+
+  /* ---- Page header inside content ---- */
+  .page-head{ padding: 18px 18px 4px; }
+  .page-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:24px; letter-spacing:0.02em; text-transform:uppercase; }
+  .page-sub{ font-size:12.5px; color:var(--text-dim); margin-top:2px; }
+
+  /* ---- Content ---- */
+  .content{ flex:1; overflow-y:auto; padding-bottom: 90px; }
+  .section{ display:none; }
+  .section.active{ display:block; animation: fadein 0.16s ease; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .px{ padding-left:18px; padding-right:18px; }
+
+  /* ---- Stat strip (horizontal scroll on phone) ---- */
+  .stat-strip{
+    display:flex; gap:10px; overflow-x:auto; padding: 14px 18px 4px;
+    scrollbar-width:none;
+  }
+  .stat-strip::-webkit-scrollbar{ display:none; }
+  .stat-card{
+    flex: 0 0 auto; min-width: 118px;
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 13px 14px;
+  }
+  .stat-num{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:26px; line-height:1; }
+  .stat-label{ font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; margin-top:5px; }
+  .stat-card.warn .stat-num{ color: var(--warn); }
+  .stat-card.good .stat-num{ color: var(--good); }
+
+  /* ---- Section label row ---- */
+  .section-label-row{ display:flex; align-items:center; justify-content:space-between; padding: 20px 18px 10px; }
+  .section-label{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-dim); }
+  .section-label .n{ color:var(--olive); }
+  .legend-mini{ display:flex; gap:10px; font-size:10px; color:var(--text-dim); }
+  .legend-mini span{ display:flex; align-items:center; gap:4px; }
+  .dot{ width:6px; height:6px; border-radius:50%; display:inline-block; }
+  .dot.good{ background:var(--good); } .dot.warn{ background:var(--warn); } .dot.bad{ background:var(--bad); }
+
+  /* ---- Status board (signature element): 2-col grid of member tiles ---- */
+  .status-board{ display:grid; grid-template-columns: 1fr 1fr; gap:9px; padding: 0 18px; }
+  .member-tile{
+    background: var(--bg-panel); border:1px solid var(--line); border-left: 3px solid var(--steel-dim);
+    border-radius: var(--radius-sm); padding: 11px 12px;
+  }
+  .member-tile.on-call{ border-left-color: var(--olive); }
+  .member-tile.alert{ border-left-color: var(--bad); }
+  .tile-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
+  .tile-name{ font-weight:600; font-size:12.5px; line-height:1.25; }
+  .tile-rank{ font-size:9.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em; margin-top:1px; }
+  .tile-status-dot{ width:7px; height:7px; border-radius:50%; margin-top:3px; flex-shrink:0; }
+  .tile-role{ font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--olive); margin-top:5px; }
+  .tile-flags{ display:flex; gap:4px; margin-top:7px; flex-wrap:wrap; }
+  .flag{ font-size:8.5px; padding:2px 6px; border-radius:10px; text-transform:uppercase; letter-spacing:0.03em; font-weight:600; }
+  .flag.warn{ background:var(--warn-bg); color:var(--warn); }
+  .flag.bad{ background:var(--bad-bg); color:var(--bad); }
+  .flag.oncall{ background:rgba(168,153,104,0.16); color:var(--olive-bright); }
+
+  /* ---- Activity feed ---- */
+  .activity-item{
+    padding: 12px 18px; border-bottom:1px solid var(--line);
+    font-size:12.5px; display:flex; flex-direction:column; gap:2px;
+  }
+  .activity-time{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-dim); }
+
+  /* ---- Card list rows (replace tables on mobile) ---- */
+  .card-list{ display:flex; flex-direction:column; gap:9px; padding: 0 18px; }
+  .row-card{
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 13px 14px;
+  }
+  .row-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .row-name-wrap{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .mini-avatar{
+    width:32px; height:32px; border-radius:50%; background:var(--bg-panel-raised);
+    border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:var(--olive); flex-shrink:0;
+  }
+  .row-title{ font-weight:600; font-size:13.5px; }
+  .row-subtitle{ font-size:11px; color:var(--text-dim); margin-top:1px; }
+  .row-meta{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; }
+  .meta-pair{ font-size:11px; }
+  .meta-label{ color:var(--text-dim); text-transform:uppercase; letter-spacing:0.04em; font-size:9px; display:block; margin-bottom:2px; }
+  .meta-val{ font-family:'JetBrains Mono',monospace; font-size:11.5px; }
+
+  .pill{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:12px; text-transform:uppercase; letter-spacing:0.03em; flex-shrink:0; }
+  .pill.good{ background:var(--good-bg); color:var(--good); }
+  .pill.warn{ background:var(--warn-bg); color:var(--warn); }
+  .pill.bad{ background:var(--bad-bg); color:var(--bad); }
+  .pill.neutral{ background:rgba(138,143,148,0.14); color:var(--steel); }
+  .pill-dot{ width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  /* ---- Callout cards ---- */
+  .callout-card{
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding:14px; display:flex; gap:12px;
+  }
+  .callout-marker{ width:3px; border-radius:2px; background:var(--steel-dim); flex-shrink:0; }
+  .callout-marker.active{ background:var(--bad); }
+  .callout-type{ font-weight:600; font-size:13.5px; }
+  .callout-meta{ font-size:11px; color:var(--text-dim); margin-top:3px; }
+  .callout-roster{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-dim); margin-top:8px; }
+  .callout-outcome{ font-size:11.5px; color:var(--text); margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }
+
+  /* ---- FAB (add button, commander only) ---- */
+  .fab{
+    position:absolute; right:18px; bottom: calc(78px + var(--safe-bottom));
+    width:52px; height:52px; border-radius:50%;
+    background: var(--olive); color:#0c0e0c;
+    display:flex; align-items:center; justify-content:center;
+    font-size:26px; font-weight:400; border:none; cursor:pointer;
+    box-shadow: 0 6px 18px rgba(168,153,104,0.35);
+    z-index: 15;
+  }
+
+  /* ---- Bottom tab bar ---- */
+  .tabbar{
+    position: sticky; bottom:0; left:0; right:0;
+    display:flex;
+    background: rgba(20,23,15,0.95); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+    padding: 8px 4px calc(8px + var(--safe-bottom));
+    z-index: 20;
+  }
+  .tab-item{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding: 6px 2px; color: var(--steel-dim); cursor:pointer; position:relative;
+    border-radius: var(--radius-sm);
+  }
+  .tab-item.active{ color: var(--olive-bright); }
+  .tab-icon{ width:21px; height:21px; }
+  .tab-label{ font-size:9.5px; font-weight:600; letter-spacing:0.02em; text-transform:uppercase; }
+  .tab-dot-badge{
+    position:absolute; top:2px; right: 22%;
+    width:7px; height:7px; border-radius:50%; background: var(--bad);
+    border: 1.5px solid var(--bg-panel);
+  }
+
+  /* ---- Role sheet (bottom sheet for role switch, in More tab) ---- */
+  .settings-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 14px 18px; border-bottom:1px solid var(--line);
+  }
+  .settings-label{ font-size:13.5px; font-weight:500; }
+  .settings-sub{ font-size:11px; color:var(--text-dim); margin-top:2px; }
+  .role-toggle{ display:flex; background: var(--bg); border:1px solid var(--line); border-radius: 20px; overflow:hidden; width:100%; }
+  .role-btn{ flex:1; text-align:center; padding: 8px 4px; font-size:11px; font-weight:600; color: var(--steel-dim); cursor:pointer; transition: all 0.12s; }
+  .role-btn.active{ background: var(--olive); color: #0c0e0c; }
+
+  .more-group-title{ padding: 16px 18px 8px; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-dim); font-weight:600; }
+  .more-nav-item{ display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); }
+  .more-nav-item .tab-icon{ color: var(--olive); }
+  .more-nav-item .label{ font-size:13.5px; font-weight:500; }
+  .more-nav-item .chev{ margin-left:auto; color:var(--steel-dim); }
+
+  /* ---- Appearance / theming ---- */
+  .swatch-row{ display:flex; gap:10px; padding: 14px 18px; flex-wrap:wrap; align-items:center; }
+  .swatch{
+    width:34px; height:34px; border-radius:50%; cursor:pointer; border:2px solid transparent;
+    position:relative; flex-shrink:0;
+  }
+  .swatch.selected{ border-color: var(--text); }
+  .swatch.selected::after{ content:'✓'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; color:#0c0e0c; font-weight:700; }
+  .custom-color-wrap{ display:flex; align-items:center; gap:8px; }
+  .custom-color-input{ width:34px; height:34px; border-radius:50%; border:2px dashed var(--line); background:none; cursor:pointer; padding:0; overflow:hidden; }
+  .custom-color-input::-webkit-color-swatch-wrapper{ padding:0; border-radius:50%; }
+  .custom-color-input::-webkit-color-swatch{ border:none; border-radius:50%; }
+
+  /* ---- My Status card (member home) ---- */
+  .my-status-card{
+    margin: 14px 18px 4px; background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 16px 14px;
+  }
+  .my-status-top{ display:flex; align-items:center; gap:12px; }
+  .my-status-avatar{
+    width:46px; height:46px; border-radius:50%; background: var(--olive); color:#0c0e0c;
+    display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex-shrink:0;
+  }
+  .my-status-name{ font-weight:700; font-size:15px; }
+  .my-status-role{ font-size:11.5px; color:var(--text-dim); margin-top:1px; }
+  .quick-toggle-row{ display:flex; gap:7px; margin-top:14px; }
+  .quick-toggle{
+    flex:1; text-align:center; padding:9px 4px; border-radius: var(--radius-sm); border:1px solid var(--line);
+    background: var(--bg); font-size:11px; font-weight:600; color: var(--text-dim); cursor:pointer;
+    text-transform:uppercase; letter-spacing:0.02em;
+  }
+  .quick-toggle.qt-good.active{ background: var(--good-bg); border-color: var(--good); color: var(--good); }
+  .quick-toggle.qt-warn.active{ background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  .quick-toggle.qt-bad.active{ background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+  .oncall-row{
+    display:flex; align-items:center; justify-content:space-between; margin-top:10px;
+    padding-top:10px; border-top:1px solid var(--line);
+  }
+  .oncall-label{ font-size:12px; color:var(--text-dim); }
+  .oncall-switch{
+    width:40px; height:22px; border-radius:12px; background: var(--bg); border:1px solid var(--line);
+    position:relative; cursor:pointer; flex-shrink:0;
+  }
+  .oncall-switch.on{ background: rgba(168,153,104,0.25); border-color: var(--olive); }
+  .oncall-switch::after{
+    content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+    background: var(--steel-dim); transition: transform 0.15s, background 0.15s;
+  }
+  .oncall-switch.on::after{ background: var(--olive); transform: translateX(18px); }
+
+  /* ---- Preview row sections (member home: my certs / gear / ops) ---- */
+  .section-view-all{ font-size:10.5px; color: var(--olive-bright); font-weight:600; text-transform:uppercase; letter-spacing:0.03em; cursor:pointer; }
+  .preview-empty{ margin:0 18px; padding:16px; text-align:center; font-size:12px; color:var(--text-dim); background:var(--bg-panel); border:1px solid var(--line); border-radius:var(--radius); }
+
+  /* ---- Hero callout button (commander home) ---- */
+  .hero-callout-btn{
+    margin: 14px 18px 4px; display:flex; align-items:center; gap:12px;
+    background: linear-gradient(135deg, rgba(184,86,74,0.18), rgba(184,86,74,0.06));
+    border: 1.5px solid var(--bad); border-radius: var(--radius);
+    padding: 15px 16px; cursor:pointer;
+  }
+  .hero-callout-icon{
+    width:42px; height:42px; border-radius:50%; background: var(--bad); color:#fff; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .hero-callout-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; text-transform:uppercase; letter-spacing:0.02em; color:#fff; }
+  .hero-callout-sub{ font-size:11px; color: rgba(255,255,255,0.65); margin-top:1px; }
+
+  /* ---- Callout roster checklist ---- */
+  .callout-roster-item{
+    display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--line);
+    cursor:pointer;
+  }
+  .callout-roster-item:last-child{ border-bottom:none; }
+  .callout-checkbox{
+    width:19px; height:19px; border-radius:5px; border:1.5px solid var(--line); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; background:var(--bg);
+  }
+  .callout-checkbox.checked{ background: var(--olive); border-color: var(--olive); color:#0c0e0c; }
+  .callout-roster-name{ font-size:12.5px; font-weight:500; }
+  .callout-roster-sub{ font-size:10.5px; color:var(--text-dim); margin-top:1px; }
+  .callout-oncall-tag{ margin-left:auto; font-size:9px; color: var(--olive-bright); text-transform:uppercase; letter-spacing:0.03em; font-weight:600; }
+
+  /* ---- Callout card recipient/ack tracking ---- */
+  .callout-method-tag{
+    font-size:9px; text-transform:uppercase; letter-spacing:0.04em; font-weight:600; color: var(--steel-dim);
+    border:1px solid var(--line); border-radius:8px; padding:2px 7px; margin-top:6px; display:inline-block;
+  }
+  .callout-ack-list{ display:flex; flex-direction:column; gap:0; margin-top:10px; }
+  .callout-recipient-row{
+    display:flex; align-items:center; justify-content:space-between; padding:7px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .callout-recipient-row:last-child{ border-bottom:none; }
+  .callout-recipient-name{ font-size:12px; color: var(--text); }
+  .callout-recipient-actions{ display:flex; align-items:center; gap:7px; }
+  .callout-ack-chip{
+    font-size:10px; padding:4px 9px; border-radius:12px; font-weight:600; cursor:pointer;
+    border:1px solid var(--line); color: var(--text-dim); background: var(--bg);
+  }
+  .callout-ack-chip.acknowledged{ background: var(--good-bg); color: var(--good); border-color: var(--good); }
+  .callout-signal-icon{
+    width:26px; height:26px; border-radius:50%; background: var(--bg); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; color: var(--olive-bright); cursor:pointer; flex-shrink:0;
+  }
+
+  /* ---- Callout mode selector ---- */
+  .mode-toggle{ display:flex; gap:8px; }
+  .mode-btn{
+    flex:1; text-align:center; padding:11px 4px; border-radius: var(--radius-sm); border:1.5px solid var(--line);
+    background: var(--bg); font-size:12px; font-weight:600; color: var(--text-dim); cursor:pointer;
+    text-transform:uppercase; letter-spacing:0.02em;
+  }
+  .mode-btn.selected[data-mode="standby"]{ background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  .mode-btn.selected[data-mode="deploy"]{ background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+  .mode-pill{
+    font-size:9px; text-transform:uppercase; letter-spacing:0.04em; font-weight:700; border-radius:8px;
+    padding:2px 7px; margin-top:6px; margin-right:6px; display:inline-block;
+  }
+  .mode-pill.standby{ background: var(--warn-bg); color: var(--warn); }
+  .mode-pill.deploy{ background: var(--bad-bg); color: var(--bad); }
+  .leader-tag{
+    font-size:8.5px; text-transform:uppercase; letter-spacing:0.03em; font-weight:700;
+    background: rgba(168,153,104,0.16); color: var(--olive-bright); border-radius:8px; padding:1px 6px; margin-left:6px;
+    vertical-align:middle;
+  }
+  .signal-hint{ font-size:10.5px; color: var(--text-dim); line-height:1.4; }
+
+  /* ---- Operations: list ---- */
+  .op-card{
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 14px; margin: 0 18px 10px;
+  }
+  .op-card-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .op-name{ font-weight:600; font-size:14px; }
+  .op-meta{ font-size:11px; color:var(--text-dim); margin-top:3px; }
+  .op-meta-row{ display:flex; gap:14px; margin-top:10px; }
+  .op-meta-item{ font-size:11px; color:var(--text-dim); display:flex; align-items:center; gap:5px; }
+
+  /* ---- Operations: detail ---- */
+  .op-detail-header{ padding: 14px 18px 6px; display:flex; align-items:center; gap:10px; }
+  .back-btn, .icon-btn{
+    width:32px; height:32px; border-radius:50%; background: var(--bg-panel); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; color: var(--text); cursor:pointer; flex-shrink:0;
+  }
+  .op-detail-title-wrap{ flex:1; min-width:0; }
+  .op-detail-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:17px; text-transform:uppercase; letter-spacing:0.02em; line-height:1.15; }
+  .op-detail-sub{ font-size:11px; color:var(--text-dim); margin-top:2px; }
+
+  .subtab-row{ display:flex; gap:6px; padding: 14px 18px 0; }
+  .subtab{
+    flex:1; text-align:center; padding: 9px 4px; font-size:11.5px; font-weight:600;
+    color: var(--text-dim); background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
+    cursor:pointer; text-transform:uppercase; letter-spacing:0.03em;
+  }
+  .subtab.active{ background: var(--olive); color:#0c0e0c; border-color: var(--olive); }
+  .subpanel{ display:none; padding: 16px 18px 10px; }
+  .subpanel.active{ display:block; }
+
+  /* ---- Map ---- */
+  .op-palette{ display:flex; gap:8px; overflow-x:auto; padding-bottom:12px; scrollbar-width:none; }
+  .op-palette::-webkit-scrollbar{ display:none; }
+  .op-chip{
+    flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px;
+    cursor:pointer; padding: 5px; border-radius: var(--radius-sm); border:2px solid transparent;
+  }
+  .op-chip.armed{ border-color: var(--olive); background: rgba(168,153,104,0.08); }
+  .op-chip .mini-avatar{ width:36px; height:36px; font-size:12px; }
+  .op-chip-label{ font-size:8.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.03em; max-width:48px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .map-hint{ font-size:11px; color:var(--text-dim); margin-bottom:10px; }
+  .map-canvas{
+    position:relative; width:100%; padding-top:100%; border-radius: var(--radius); overflow:hidden;
+    border:1px solid var(--line);
+    background-color: #10130d;
+    background-image:
+      linear-gradient(rgba(168,153,104,0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(168,153,104,0.12) 1px, transparent 1px);
+    background-size: 12.5% 12.5%;
+  }
+  .map-canvas.has-image{ background-image:none; padding-top:0; }
+  #mapBgImage{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none;
+  }
+  .map-upload-prompt{
+    position:absolute; inset:14px; border:1.5px dashed var(--line); border-radius: var(--radius-sm);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    color: var(--steel-dim); text-align:center; cursor:pointer;
+  }
+  .map-upload-text{ font-size:12px; line-height:1.5; padding:0 20px; }
+  .map-change-btn{
+    position:absolute; top:10px; left:10px; background: rgba(12,14,12,0.75); backdrop-filter: blur(4px);
+    border:1px solid var(--line); border-radius:14px; padding:5px 11px; font-size:10.5px; font-weight:600;
+    color: var(--olive-bright); cursor:pointer; text-transform:uppercase; letter-spacing:0.03em;
+  }
+  .map-compass{ position:absolute; top:10px; right:10px; width:26px; height:26px; opacity:0.5; }
+  .map-scale{ position:absolute; bottom:8px; left:10px; font-family:'JetBrains Mono',monospace; font-size:8.5px; color: var(--steel-dim); letter-spacing:0.04em; }
+  .map-pin{
+    position:absolute; width:28px; height:28px; border-radius:50%;
+    background:#facc15; color:#0c0e0c; font-size:10px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    transform: translate(-50%,-50%); cursor:pointer;
+    box-shadow: 0 0 0 3px rgba(250,204,21,0.3), 0 2px 6px rgba(0,0,0,0.5);
+    border: 1.5px solid #0c0e0c;
+  }
+
+  /* ---- Plan / debrief forms ---- */
+  .field-group{ margin-bottom:16px; }
+  .field-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; color: var(--text-dim); font-weight:600; margin-bottom:6px; display:block; }
+  .field-textarea{
+    width:100%; background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
+    color: var(--text); font-family:'Inter',sans-serif; font-size:13px; padding:11px 12px; resize:vertical; min-height:64px;
+    line-height:1.45;
+  }
+  .field-textarea::placeholder{ color: var(--steel-dim); }
+  .field-textarea:focus{ outline:none; border-color: var(--olive); }
+  .field-static{
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
+    padding:11px 12px; font-size:13px; line-height:1.5; color: var(--text);
+  }
+  .field-empty{ color: var(--steel-dim); font-style:italic; }
+
+  .btn-block{ width:100%; margin-top:6px; }
+  .btn-outline{
+    background:transparent; border:1px solid var(--olive); color: var(--olive-bright);
+  }
+  .btn-danger-outline{ background:transparent; border:1px solid var(--bad); color: var(--bad); }
+
+  /* ---- Analysis output ---- */
+  .analysis-card{
+    background: var(--bg-panel); border:1px solid var(--line); border-left:3px solid var(--olive);
+    border-radius: var(--radius); padding:14px; margin-top:14px;
+  }
+  .analysis-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12.5px; letter-spacing:0.06em; text-transform:uppercase; color: var(--olive-bright); margin-bottom:10px; }
+  .analysis-flags{ display:flex; flex-direction:column; gap:7px; margin-bottom:12px; }
+  .analysis-flag{ display:flex; align-items:flex-start; gap:8px; font-size:12px; }
+  .analysis-summary{ font-size:12.5px; line-height:1.55; color: var(--text); padding-top:12px; border-top:1px solid var(--line); }
+  .analysis-disclaimer{ font-size:10px; color: var(--steel-dim); margin-top:10px; font-style:italic; }
+
+  .new-op-sheet{
+    position:fixed; inset:0; background: rgba(0,0,0,0.6); z-index:40;
+    display:none; align-items:flex-end; justify-content:center;
+  }
+  .new-op-sheet.active{ display:flex; }
+  .new-op-sheet-inner{
+    width:100%; max-width:430px; background: var(--bg-panel); border-top:1px solid var(--line);
+    border-radius: 16px 16px 0 0; padding: 18px 18px calc(20px + var(--safe-bottom));
+    max-height: 82vh; overflow-y:auto;
+  }
+  .sheet-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:17px; text-transform:uppercase; margin-bottom:14px; }
+  .field-input{
+    width:100%; background: var(--bg); border:1px solid var(--line); border-radius: var(--radius-sm);
+    color: var(--text); font-family:'Inter',sans-serif; font-size:13px; padding:10px 12px;
+  }
+  .field-input:focus{ outline:none; border-color: var(--olive); }
+  .sheet-actions{ display:flex; gap:10px; margin-top:16px; }
+  .sheet-actions .btn{ flex:1; }
+
+  /* ---- Printable report overlay ---- */
+  .report-overlay{
+    position:fixed; inset:0; background:#ffffff; z-index:60; display:none;
+    overflow-y:auto; color:#1c1e19; font-family:'Inter',sans-serif;
+  }
+  .report-overlay.active{ display:block; }
+  .report-header-bar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: calc(12px + var(--safe-top)) 18px 12px;
+    border-bottom:1px solid #e2e0d8; position:sticky; top:0; background:#ffffff; z-index:2;
+  }
+  .report-header-bar .btn{ padding:8px 14px; font-size:12px; }
+  .report-header-bar .btn.ghost-light{ background:transparent; border:1px solid #c9c6ba; color:#3a3d33; }
+  .report-body{ padding: 26px 20px 60px; max-width:760px; margin:0 auto; }
+  .report-logo{ height:30px; margin-bottom:10px; }
+  .report-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:21px; text-transform:uppercase; letter-spacing:0.02em; color:#1c1e19; }
+  .report-meta{ font-size:12px; color:#6b6f66; margin-top:5px; }
+  .report-meta span{ margin-right:14px; }
+  .report-section-title{
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13.5px; letter-spacing:0.07em; text-transform:uppercase;
+    color:#6b6046; border-bottom:2px solid #a89968; padding-bottom:7px; margin: 30px 0 14px;
+  }
+  .report-field{ margin-bottom:14px; }
+  .report-field-label{ font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:#8a8d80; margin-bottom:4px; display:block; font-weight:600; }
+  .report-field-value{ font-size:12.5px; line-height:1.6; color:#26281f; white-space:pre-wrap; }
+  .report-field-value.empty{ color:#a8ab9e; font-style:italic; }
+  .report-map-wrap{
+    border:1px solid #d8d5c8; border-radius:8px; overflow:hidden; position:relative; width:100%;
+    padding-top:75%; background:#f2f1ea; margin-bottom:12px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .report-map-grid-line{ position:absolute; background:#dedbcd; }
+  .report-map-pin{
+    position:absolute; width:24px; height:24px; border-radius:50%; background:#a89968; color:#1c1e19;
+    font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center;
+    transform:translate(-50%,-50%); border:1.5px solid #1c1e19;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .report-roster-line{ font-size:12px; color:#3a3d33; padding:4px 0; border-bottom:1px solid #eeece4; }
+  .report-flag-list{ list-style:none; }
+  .report-flag-list li{ font-size:12px; padding:5px 0 5px 16px; position:relative; color:#26281f; }
+  .report-flag-list li::before{ content:'—'; position:absolute; left:0; color:#a89968; }
+  .report-summary-box{ font-size:12.5px; line-height:1.6; color:#26281f; background:#f7f6f1; border-radius:6px; padding:12px 14px; margin-top:10px; }
+  .report-footer{ margin-top:44px; padding-top:14px; border-top:1px solid #e2e0d8; font-size:9.5px; color:#a8ab9e; }
+
+  @media print{
+    @page{ margin: 14mm 12mm; }
+    body *{ visibility:hidden; }
+    .report-overlay, .report-overlay *{ visibility:visible; }
+    .report-overlay{ position:absolute; inset:0; overflow:visible; }
+    .no-print{ display:none !important; }
+    .report-section-title{ break-after:avoid; }
+    .report-map-wrap{ break-inside:avoid; }
+  }
+
+  ::-webkit-scrollbar{ display:none; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen" style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;">
+  <div style="width:100%; max-width:380px;">
+    <img src="logo.png" alt="OpsTac" style="display:block; height:28px; margin:0 auto 30px;">
+    <div class="error-box" id="loginError" style="display:none; background:var(--bad-bg); border:1px solid var(--bad); color:#e8a89f; border-radius:6px; padding:11px 13px; font-size:13px; margin-bottom:16px;"></div>
+    <form id="loginForm">
+      <div class="field-group">
+        <label class="field-label">Email</label>
+        <input type="email" id="loginEmail" class="field-input" required>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Password</label>
+        <input type="password" id="loginPassword" class="field-input" required>
+      </div>
+      <button type="submit" class="btn btn-block" id="loginBtn" style="margin-top:6px;">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<!-- SET PASSWORD (first login after being invited) -->
+<div id="setPasswordScreen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
+  <div style="width:100%; max-width:380px;">
+    <img src="logo.png" alt="OpsTac" style="display:block; height:28px; margin:0 auto 20px;">
+    <div class="display" style="font-size:16px; text-align:center; margin-bottom:6px;">Welcome to OpsTac</div>
+    <div style="font-size:12.5px; color:var(--text-dim); text-align:center; margin-bottom:20px;">Set a password to finish setting up your account.</div>
+    <div class="error-box" id="setPasswordError" style="display:none; background:var(--bad-bg); border:1px solid var(--bad); color:#e8a89f; border-radius:6px; padding:11px 13px; font-size:13px; margin-bottom:16px;"></div>
+    <form id="setPasswordForm">
+      <div class="field-group">
+        <label class="field-label">New Password</label>
+        <input type="password" id="newPassword" class="field-input" minlength="8" required>
+      </div>
+      <button type="submit" class="btn btn-block" id="setPasswordBtn" style="margin-top:6px;">Set Password & Continue</button>
+    </form>
+  </div>
+</div>
+
+<div class="phone" id="appShell" style="display:none;">
+
+  <div class="topbar">
+    <div class="brand-mark">
+      <div>
+        <img src="logo.png" alt="OpsTac" class="brand-logo">
+        <div class="brand-sub">SRT Module</div>
+      </div>
+    </div>
+    <div class="top-avatar" id="topAvatar">CK</div>
+  </div>
+
+  <div class="content" id="content">
+
+    <!-- OVERVIEW -->
+    <section class="section active" id="sec-overview">
+      <div class="page-head">
+        <div class="page-title" id="overviewTitle">Overview</div>
+        <div class="page-sub" id="overviewSub">Team readiness at a glance</div>
+      </div>
+      <div id="overviewContent"></div>
+    </section>
+
+    <!-- ROSTER -->
+    <section class="section" id="sec-roster">
+      <div class="page-head">
+        <div class="page-title">Roster</div>
+        <div class="page-sub">Full SRT personnel</div>
+      </div>
+      <div class="px" style="margin-bottom:6px; display:flex; gap:16px; flex-wrap:wrap;">
+        <div class="section-view-all" id="addSubteamLink" style="display:inline-block;">+ Add Sub-Team</div>
+        <div class="section-view-all" id="linkExistingLink" style="display:none;">+ Add Existing Account</div>
+      </div>
+      <div id="pendingRequestsWrap" class="px"></div>
+      <div class="card-list" id="rosterList" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- EQUIPMENT -->
+    <!-- OPERATIONS -->
+    <section class="section" id="sec-operations">
+      <div id="opsListView">
+        <div class="page-head">
+          <div class="page-title">Operations</div>
+          <div class="page-sub">Plan, run, and debrief activations</div>
+        </div>
+        <div class="hero-callout-btn no-print" id="opsHeroCalloutBtn">
+          <div class="hero-callout-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13.73 4a2 2 0 0 0-3.46 0L2.34 18a2 2 0 0 0 1.73 3h15.86a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div>
+            <div class="hero-callout-title">Callout Team</div>
+            <div class="hero-callout-sub">Standby or deploy — text, Signal, or share</div>
+          </div>
+        </div>
+        <div id="opsList" style="margin-top:14px;"></div>
+
+        <div class="section-label-row"><div class="section-label">Recent Callouts</div></div>
+        <div class="card-list" id="calloutList" style="margin-bottom:10px;"></div>
+      </div>
+
+      <div id="opsDetailView" style="display:none;">
+        <div class="op-detail-header">
+          <div class="back-btn no-print" id="opBackBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
+          </div>
+          <div class="op-detail-title-wrap">
+            <div class="op-detail-title" id="opDetailTitle"></div>
+            <div class="op-detail-sub" id="opDetailSub"></div>
+          </div>
+          <div class="icon-btn no-print" id="opPrintBtn" title="Print report">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </div>
+          <div class="icon-btn no-print" id="opDeleteBtn" title="Delete operation" style="display:none; color:var(--bad);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </div>
+        </div>
+        <div class="subtab-row" id="opSubtabRow">
+          <div class="subtab active" data-subtab="map">Map</div>
+          <div class="subtab" data-subtab="plan">Pre-Ops Plan</div>
+          <div class="subtab" data-subtab="debrief">Debrief</div>
+          <div class="subtab" data-subtab="callouts">Callouts</div>
+        </div>
+
+        <div class="subpanel active" id="opPanel-map">
+          <div class="map-hint" id="mapHint">Tap a team member below, then tap the map to place them.</div>
+          <div class="op-palette" id="opPalette"></div>
+          <input type="file" accept="image/*" id="mapImageInput" style="display:none">
+          <div class="map-canvas" id="mapCanvas">
+            <div class="map-upload-prompt" id="mapUploadPrompt">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div class="map-upload-text">Upload a satellite screenshot,<br>floor plan, or scene photo</div>
+            </div>
+            <img id="mapBgImage" style="display:none;">
+            <svg class="map-compass" id="mapCompass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--olive)"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="8"/></svg>
+            <div class="map-scale" id="mapScaleLabel">TACTICAL OVERLAY — PLACEHOLDER GRID</div>
+            <div class="map-change-btn no-print" id="mapChangeBtn" style="display:none;">Change Image</div>
+          </div>
+        </div>
+
+        <div class="subpanel" id="opPanel-plan">
+          <div id="planFields"></div>
+        </div>
+
+        <div class="subpanel" id="opPanel-debrief">
+          <div id="debriefContent"></div>
+        </div>
+        <div class="subpanel" id="opPanel-callouts">
+          <button class="btn btn-block" id="opCalloutBtn" style="margin-bottom:16px;">Callout Team</button>
+          <div id="opCalloutsContent"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-equipment">
+      <div class="page-head">
+        <div class="page-title">Equipment</div>
+        <div class="page-sub">Assigned gear & checkout status</div>
+      </div>
+      <div class="card-list" id="equipList" style="margin-top:14px;"></div>
+    </section>
+
+    <!-- CERTS -->
+    <section class="section" id="sec-certs">
+      <div class="page-head">
+        <div class="page-title">Certifications</div>
+        <div class="page-sub" id="certsSub">Team certification status</div>
+      </div>
+      <div class="card-list" id="certList" style="margin-top:14px;"></div>
+    </section>
+
+    <!-- TRAINING -->
+    <section class="section" id="sec-training">
+      <div class="page-head">
+        <div class="page-title">Training</div>
+        <div class="page-sub">Logged sessions and hours</div>
+      </div>
+      <div class="stat-strip" id="trainingStats"></div>
+      <div class="card-list" id="trainingList" style="margin-top:14px;"></div>
+    </section>
+
+    <!-- MORE -->
+    <section class="section" id="sec-more">
+      <div class="page-head">
+        <div class="page-title">More</div>
+        <div class="page-sub">Settings & additional modules</div>
+      </div>
+
+      <div class="more-group-title">Agency Code</div>
+      <div style="padding:0 18px 18px;">
+        <div style="font-size:12px; color:var(--text-dim); line-height:1.5; margin-bottom:10px;">
+          Agency names aren't unique — share this with anyone you're adding so there's no doubt which team they're joining.
+        </div>
+        <div class="mono" style="font-size:20px; font-weight:700; letter-spacing:3px; color:var(--olive-bright); background:var(--bg-panel); border:1px solid var(--line); border-radius:6px; padding:12px 16px; display:inline-block;" id="agencyCodeDisplay">—</div>
+      </div>
+
+      <div class="more-group-title">Modules</div>
+      <div class="more-nav-item" data-jump="equipment">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span class="label">Equipment</span>
+        <span class="chev">›</span>
+      </div>
+      <div class="more-nav-item" data-jump="training">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12.5V17a6 3 0 0 0 12 0v-4.5"/></svg>
+        <span class="label">Training</span>
+        <span class="chev">›</span>
+      </div>
+
+      <div class="more-group-title">Integrations</div>
+      <div class="settings-row" style="border-bottom:none; padding-bottom:8px; flex-direction:column; align-items:stretch; gap:8px;">
+        <div>
+          <div class="settings-label">Signal group link</div>
+          <div class="settings-sub">Paste your team's Signal group invite link (from the group's Group Link setting in Signal) to enable one-tap callouts</div>
+        </div>
+        <input type="text" class="field-input" id="signalGroupLinkInput" placeholder="https://signal.group/#...">
+        <button class="btn btn-block" id="saveSignalGroupLink">Save</button>
+        <div id="signalGroupStatus" style="font-size:11px; color:var(--text-dim);"></div>
+      </div>
+
+      <div class="more-group-title">Appearance</div>
+      <div class="settings-row" style="border-bottom:none; padding-bottom:0;">
+        <div>
+          <div class="settings-label">Accent color</div>
+          <div class="settings-sub">Defaults to the OpsTac logo palette</div>
+        </div>
+      </div>
+      <div class="swatch-row">
+        <div class="swatch selected" data-accent="#a89968" data-bright="#c7b482" style="background:#a89968;" title="OpsTac Default"></div>
+        <div class="swatch" data-accent="#b8564a" data-bright="#d97a6c" style="background:#b8564a;" title="Crimson Ops"></div>
+        <div class="swatch" data-accent="#5a7fa6" data-bright="#7ea3c9" style="background:#5a7fa6;" title="Blue Steel"></div>
+        <div class="swatch" data-accent="#6b9a5f" data-bright="#8fbf82" style="background:#6b9a5f;" title="Field Green"></div>
+        <div class="custom-color-wrap">
+          <input type="color" class="custom-color-input" id="customColorInput" value="#a89968" title="Custom color">
+        </div>
+      </div>
+
+      <div id="permissionsSettingsGroup">
+        <div class="more-group-title">Team Leader Permissions</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Edit Operations</div>
+            <div class="settings-sub">Map placement, pre-ops plan, debrief</div>
+          </div>
+          <div class="oncall-switch on" id="permEditOps"></div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Initiate Callouts</div>
+            <div class="settings-sub">Send activations, track acknowledgments</div>
+          </div>
+          <div class="oncall-switch on" id="permCallouts"></div>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Manage Records</div>
+            <div class="settings-sub">Log equipment, certs, training, roster</div>
+          </div>
+          <div class="oncall-switch on" id="permManageRecords"></div>
+        </div>
+      </div>
+
+      <div class="more-group-title">Account</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label" id="acctNameLabel">—</div>
+          <div class="settings-sub" id="acctRoleLabel">—</div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label" id="acctAgencyLabel">—</div>
+          <div class="settings-sub">Your agency</div>
+        </div>
+      </div>
+      <div class="settings-row" style="cursor:pointer;" id="signOutRow">
+        <div class="settings-label" style="color:var(--bad);">Sign Out</div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Push notifications</div>
+          <div class="settings-sub">Callout & cert-expiry alerts</div>
+        </div>
+        <span class="pill good"><span class="pill-dot"></span>On</span>
+      </div>
+    </section>
+
+    <!-- NEW EQUIPMENT SHEET -->
+    <div class="new-op-sheet" id="equipSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Log Equipment</div>
+        <div class="field-group"><label class="field-label">Item</label><input type="text" class="field-input" id="mEquipItem" placeholder="e.g. M4 Carbine"></div>
+        <div class="field-group"><label class="field-label">Asset #</label><input type="text" class="field-input" id="mEquipAsset"></div>
+        <div class="field-group"><label class="field-label">Assigned To</label><select class="field-input" id="mEquipAssignee"></select></div>
+        <div class="field-group"><label class="field-label">Condition</label>
+          <select class="field-input" id="mEquipCondition"><option value="good">Good</option><option value="needs-service">Needs Service</option><option value="inspect-due">Inspection Due</option></select>
+        </div>
+        <div class="field-group"><label class="field-label">Status</label>
+          <select class="field-input" id="mEquipStatus"><option value="in-storage">In Storage</option><option value="checked-out">Checked Out</option></select>
+        </div>
+        <div class="sheet-actions"><button class="btn ghost" id="mEquipCancel">Cancel</button><button class="btn" id="mEquipSave">Save</button></div>
+      </div>
+    </div>
+
+    <!-- NEW CERT SHEET -->
+    <div class="new-op-sheet" id="certSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Log Certification</div>
+        <div class="field-group"><label class="field-label">Member</label><select class="field-input" id="mCertMember"></select></div>
+        <div class="field-group"><label class="field-label">Certification Name</label><input type="text" class="field-input" id="mCertName"></div>
+        <div class="field-group"><label class="field-label">Issued</label><input type="date" class="field-input" id="mCertIssued"></div>
+        <div class="field-group"><label class="field-label">Expires</label><input type="date" class="field-input" id="mCertExpires"></div>
+        <div class="sheet-actions"><button class="btn ghost" id="mCertCancel">Cancel</button><button class="btn" id="mCertSave">Save</button></div>
+      </div>
+    </div>
+
+    <!-- NEW TRAINING SHEET -->
+    <div class="new-op-sheet" id="trainingSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Log Training Session</div>
+        <div class="field-group"><label class="field-label">Date</label><input type="date" class="field-input" id="mTrainDate"></div>
+        <div class="field-group"><label class="field-label">Hours</label><input type="number" step="0.5" class="field-input" id="mTrainHours" placeholder="4"></div>
+        <div class="field-group"><label class="field-label">Session Title</label><input type="text" class="field-input" id="mTrainTitle"></div>
+        <div class="field-group"><label class="field-label">Type</label><input type="text" class="field-input" id="mTrainType" placeholder="e.g. Live Fire, Tactical"></div>
+        <div class="field-group"><label class="field-label">Attendees</label><div id="mTrainAttendees"></div></div>
+        <div class="sheet-actions"><button class="btn ghost" id="mTrainCancel">Cancel</button><button class="btn" id="mTrainSave">Save</button></div>
+      </div>
+    </div>
+
+    <!-- MEMBER SHEET (add/edit operator) -->
+    <div class="new-op-sheet" id="memberSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title" id="memberSheetTitle">Add Operator</div>
+        <div class="field-group"><label class="field-label">Name</label><input type="text" class="field-input" id="mMemberName"></div>
+        <div class="field-group"><label class="field-label">Rank</label><input type="text" class="field-input" id="mMemberRank"></div>
+        <div class="field-group"><label class="field-label">Team Role</label><input type="text" class="field-input" id="mMemberRole"></div>
+        <div class="field-group"><label class="field-label">Sub-Team</label><select class="field-input" id="mMemberSubteam"></select></div>
+        <div class="field-group"><label class="field-label">Phone</label><input type="tel" class="field-input" id="mMemberPhone"></div>
+        <div class="field-group"><label class="field-label">Status</label>
+          <select class="field-input" id="mMemberStatus">
+            <option value="ready">Ready</option><option value="attention">Attention</option><option value="unavailable">Unavailable</option>
+          </select>
+        </div>
+        <div class="field-group"><label class="field-label">If they later get app access, their role would be</label>
+          <select class="field-input" id="mMemberPermission">
+            <option value="member">Member</option>
+            <option value="team-leader">Team Leader</option>
+          </select>
+        </div>
+        <div id="mMemberInviteRow" style="display:none;">
+          <div class="field-group"><label class="field-label">Email (optional — invite them to create a login)</label><input type="email" class="field-input" id="mMemberInviteEmail" placeholder="name@example.com"></div>
+          <div class="signal-hint" id="mAddInviteError" style="display:none; color:var(--bad); margin-bottom:10px;"></div>
+        </div>
+        <div class="settings-row" style="padding:10px 0;">
+          <div class="settings-label">Available for callout</div>
+          <div class="oncall-switch" id="mMemberOnCall"></div>
+        </div>
+        <div id="memberSheetInviteRow" style="display:none;">
+          <div class="settings-row" style="border-top:1px solid var(--line); padding-top:16px;">
+            <div><div class="settings-label">App Login</div><div class="settings-sub">Send an email invite to create their own account</div></div>
+          </div>
+          <button class="btn btn-outline btn-block" id="mInviteBtn">Invite to App</button>
+          <div class="signal-hint" id="mInviteError" style="display:none; color:var(--bad); margin-top:8px;"></div>
+        </div>
+        <div id="memberSheetRemoveRow" style="display:none;">
+          <div class="settings-row" style="border-top:1px solid var(--line); padding-top:16px;">
+            <div><div class="settings-label">Remove from Roster</div><div class="settings-sub" id="mRemoveSub"></div></div>
+          </div>
+          <button class="btn btn-danger-outline btn-block" id="mRemoveBtn">Remove</button>
+          <div class="signal-hint" id="mRemoveError" style="display:none; color:var(--bad); margin-top:8px;"></div>
+        </div>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="mMemberCancel">Cancel</button>
+          <button class="btn" id="mMemberSave">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEW SUB-TEAM SHEET -->
+    <div class="new-op-sheet" id="subteamSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Add Sub-Team</div>
+        <div class="field-group"><label class="field-label">Team Name</label><input type="text" class="field-input" id="mSubteamName" placeholder="e.g. Charlie Team"></div>
+        <div class="field-group"><label class="field-label">Focus</label><input type="text" class="field-input" id="mSubteamFocus" placeholder="e.g. Sniper / Observation"></div>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="mSubteamCancel">Cancel</button>
+          <button class="btn" id="mSubteamSave">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- EDIT SUB-TEAM SHEET -->
+    <div class="new-op-sheet" id="editSubteamSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Edit Sub-Team</div>
+        <div class="field-group"><label class="field-label">Team Name</label><input type="text" class="field-input" id="eSubteamName"></div>
+        <div class="field-group"><label class="field-label">Focus</label><input type="text" class="field-input" id="eSubteamFocus"></div>
+        <div class="field-group"><label class="field-label">Team Leader</label><select class="field-input" id="eSubteamLeader"></select>
+          <div class="signal-hint" id="eSubteamNoMembers" style="display:none; margin-top:6px;">No one's assigned to this team yet.</div>
+        </div>
+        <div class="settings-row" style="border-top:1px solid var(--line); padding-top:16px; margin-bottom:14px;">
+          <div><div class="settings-label">Delete Sub-Team</div><div class="settings-sub">Members move back to Command.</div></div>
+        </div>
+        <button class="btn btn-danger-outline btn-block" id="eSubteamDelete" style="margin-bottom:16px;">Delete Sub-Team</button>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="eSubteamCancel">Cancel</button>
+          <button class="btn" id="eSubteamSave">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LINK EXISTING ACCOUNT SHEET -->
+    <div class="new-op-sheet" id="linkExistingSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Add Existing Account</div>
+        <p style="font-size:12px; color:var(--text-dim); margin-bottom:16px; line-height:1.5;">Only use this if they already have an OpsTac login. If not, use "Add Operator" then "Invite to App" instead.</p>
+        <div class="field-group"><label class="field-label">Their Email</label><input type="email" class="field-input" id="lExEmail" placeholder="name@example.com"></div>
+        <div class="field-group"><label class="field-label">Name</label><input type="text" class="field-input" id="lExName"></div>
+        <div class="field-group"><label class="field-label">Rank</label><input type="text" class="field-input" id="lExRank"></div>
+        <div class="field-group"><label class="field-label">Team Role</label><input type="text" class="field-input" id="lExRole"></div>
+        <div class="field-group"><label class="field-label">Sub-Team</label><select class="field-input" id="lExSubteam"></select></div>
+        <div class="field-group"><label class="field-label">Phone</label><input type="tel" class="field-input" id="lExPhone"></div>
+        <div class="field-group"><label class="field-label">Access Level</label>
+          <select class="field-input" id="lExPermission"><option value="member">Member</option><option value="team-leader">Team Leader</option></select>
+        </div>
+        <div class="signal-hint" id="lExError" style="display:none; color:var(--bad); margin-bottom:10px;"></div>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="lExCancel">Cancel</button>
+          <button class="btn" id="lExSave">Add to Roster</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEW OPERATION SHEET -->
+    <div class="new-op-sheet" id="newOpSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">New Operation</div>
+        <div class="field-group">
+          <label class="field-label">Operation Name</label>
+          <input type="text" class="field-input" id="newOpName" placeholder="e.g. Warrant Service — Maple St.">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Type</label>
+          <input type="text" class="field-input" id="newOpType" placeholder="e.g. High-Risk Warrant Service">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Date</label>
+          <input type="date" class="field-input" id="newOpDate">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Location</label>
+          <input type="text" class="field-input" id="newOpLocation" placeholder="e.g. Lebanon city limits">
+        </div>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="cancelNewOp">Cancel</button>
+          <button class="btn" id="createNewOp">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEW CALLOUT SHEET -->
+    <!-- EDIT CALLOUT SHEET -->
+    <div class="new-op-sheet" id="editCalloutSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">Edit Callout</div>
+        <div class="field-group"><label class="field-label">Type / Reason</label><input type="text" class="field-input" id="eCoType"></div>
+        <div class="field-group"><label class="field-label">Mode</label>
+          <div class="mode-toggle" id="eCoModeToggle">
+            <div class="mode-btn" data-mode="standby">Standby Only</div>
+            <div class="mode-btn" data-mode="deploy">Deploy</div>
+          </div>
+        </div>
+        <div class="field-group"><label class="field-label">Location</label><input type="text" class="field-input" id="eCoLocation"></div>
+        <div class="field-group"><label class="field-label">Rally Location</label><input type="text" class="field-input" id="eCoRally"></div>
+        <div class="field-group">
+          <label class="field-label">Rally Point Map (optional)</label>
+          <input type="file" accept="image/*" id="eCoRallyMapInput" style="display:none;">
+          <div class="map-canvas" id="eCoRallyMapCanvas">
+            <div class="map-upload-prompt" id="eCoRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
+            <img id="eCoRallyMapImg" style="display:none;">
+          </div>
+        </div>
+        <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="eCoMessage"></textarea></div>
+        <div class="settings-row" style="padding:10px 0;">
+          <div><div class="settings-label">Active</div><div class="settings-sub">Turn off once resolved</div></div>
+          <div class="oncall-switch" id="eCoActive"></div>
+        </div>
+        <div class="field-group"><label class="field-label">Outcome</label><textarea class="field-textarea" id="eCoOutcome" placeholder="What happened / how it was resolved..."></textarea></div>
+        <button class="btn btn-danger-outline btn-block" id="eCoDelete" style="margin-bottom:16px;">Delete Callout</button>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="eCoCancel">Cancel</button>
+          <button class="btn" id="eCoSave">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="new-op-sheet" id="newCalloutSheet">
+      <div class="new-op-sheet-inner">
+        <div class="sheet-title">New Callout</div>
+
+        <div class="field-group">
+          <label class="field-label">Type / Reason</label>
+          <input type="text" class="field-input" id="calloutType" placeholder="e.g. Barricaded Subject">
+        </div>
+        <div class="field-group" id="calloutOpLockedGroup" style="display:none;">
+          <label class="field-label">Linked Operation</label>
+          <div class="field-static" style="color:var(--olive-bright);" id="calloutOpLockedLabel"></div>
+        </div>
+        <div class="field-group" id="calloutOpPickerGroup">
+          <label class="field-label">Link to Operation (optional)</label>
+          <select class="field-input" id="calloutOperation"><option value="">— None —</option></select>
+        </div>
+        <div class="field-group" id="calloutNewOpNameGroup" style="display:none;">
+          <label class="field-label">New Operation Name</label>
+          <input type="text" class="field-input" id="calloutNewOpName" placeholder="e.g. Warrant Service — Maple St.">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Mode</label>
+          <div class="mode-toggle" id="calloutModeToggle">
+            <div class="mode-btn" data-mode="standby">Standby Only</div>
+            <div class="mode-btn" data-mode="deploy">Deploy</div>
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Location</label>
+          <input type="text" class="field-input" id="calloutLocation" placeholder="e.g. Rural Rt. 231">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Rally Location</label>
+          <input type="text" class="field-input" id="calloutRally" placeholder="e.g. Staging at mile marker 4">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Rally Point Map (optional)</label>
+          <input type="file" accept="image/*" id="calloutRallyMapInput" style="display:none;">
+          <div class="map-canvas" id="calloutRallyMapCanvas">
+            <div class="map-upload-prompt" id="calloutRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
+            <img id="calloutRallyMapImg" style="display:none;">
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Message</label>
+          <textarea class="field-textarea" id="calloutMessage" style="min-height:80px;"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Select Team</label>
+          <div class="signal-hint" id="calloutScopeNote" style="display:none; margin-bottom:8px;">Defaulted to your team's on-call members.</div>
+          <div id="calloutRosterList"></div>
+        </div>
+
+        <div class="sheet-actions" style="flex-direction:column;">
+          <button class="btn btn-block" id="sendCalloutText">Send via Text Message</button>
+          <button class="btn btn-block btn-outline" id="sendCalloutSignalGroup" style="display:none;">Send to Signal Group</button>
+          <button class="btn btn-block btn-outline" id="sendCalloutShare">Share…</button>
+          <div class="signal-hint" id="signalSetupHint" style="font-size:10.5px; color:var(--text-dim); text-align:center; margin:-4px 0 2px;">Add your team's Signal group link in More → Integrations for one-tap sending.</div>
+          <button class="btn ghost btn-block" id="logCalloutOnly">Log Only (Sent Verbally)</button>
+          <button class="btn ghost btn-block" id="cancelNewCallout" style="color:var(--steel-dim); border-color:var(--line);">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRINTABLE REPORT OVERLAY -->
+    <div class="report-overlay" id="reportOverlay">
+      <div class="report-header-bar no-print">
+        <button class="btn ghost-light" id="closeReportBtn">Close</button>
+        <button class="btn" id="printReportBtn">Print / Save PDF</button>
+      </div>
+      <div class="report-body" id="reportBody"></div>
+    </div>
+
+  </div>
+
+  <button class="fab" id="fab" title="Add">+</button>
+
+  <nav class="tabbar" id="tabbar">
+    <div class="tab-item active" data-section="overview">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+      <span class="tab-label">Home</span>
+    </div>
+    <div class="tab-item" data-section="roster" style="position:relative;">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span class="tab-label">Roster</span>
+      <span id="pendingRequestsBadge" style="display:none; position:absolute; top:2px; right:20%; background:var(--olive-bright); color:#0c0e0c; font-size:9px; font-weight:700; border-radius:8px; min-width:14px; height:14px; line-height:14px; text-align:center; border:1.5px solid var(--bg-panel);"></span>
+    </div>
+    <div class="tab-item" data-section="operations" style="position:relative;">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span class="tab-label">Ops</span>
+      <span class="tab-dot-badge" id="calloutTabBadge" style="display:none;"></span>
+    </div>
+    <div class="tab-item" data-section="certs" style="position:relative;">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/></svg>
+      <span class="tab-label">Certs</span>
+      <span class="tab-dot-badge" id="certTabBadge" style="display:none;"></span>
+    </div>
+    <div class="tab-item" data-section="more">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+      <span class="tab-label">More</span>
+    </div>
+  </nav>
+
+</div>
+
+<!-- PHOTO LIGHTBOX -->
+<div id="photoLightbox" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:300; align-items:center; justify-content:center; padding:20px;">
+  <img id="photoLightboxImg" style="max-width:100%; max-height:100%; border-radius:6px;">
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpsTac — Set Up Your Agency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#0c0e0c; --bg-panel:#14170f; --line:#262b1f;
+    --olive:#a89968; --olive-bright:#c7b482;
+    --text:#e8e6df; --text-dim:#9aa19b; --bad:#b8564a; --bad-bg:rgba(184,86,74,0.14);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--text); font-family:'Inter',sans-serif;
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .card{ width:100%; max-width:440px; }
+  .brand{ text-align:center; margin-bottom:24px; }
+  .brand-name{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:28px; letter-spacing:0.03em; }
+  .brand-sub{ font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; }
+
+  .step-indicator{ display:flex; gap:6px; justify-content:center; margin-bottom:22px; }
+  .step-dot{ width:26px; height:3px; border-radius:2px; background:var(--line); }
+  .step-dot.active{ background:var(--olive); }
+  .step-dot.done{ background:var(--olive-bright); }
+
+  h1{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; text-transform:uppercase; margin-bottom:6px; }
+  .lead{ font-size:13px; color:var(--text-dim); margin-bottom:22px; line-height:1.5; }
+  .field-group{ margin-bottom:16px; }
+  label{ font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-dim); font-weight:600; display:block; margin-bottom:6px; }
+  input, select{
+    width:100%; background:var(--bg-panel); border:1px solid var(--line); border-radius:6px;
+    color:var(--text); font-family:'Inter',sans-serif; font-size:14px; padding:11px 12px;
+  }
+  input:focus, select:focus{ outline:none; border-color:var(--olive); }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+  .choice-row{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .choice-btn{
+    flex:1; min-width:110px; text-align:center; padding:14px 8px; border-radius:8px; border:1.5px solid var(--line);
+    background:var(--bg-panel); cursor:pointer; font-size:13px; font-weight:600; color:var(--text-dim);
+  }
+  .choice-btn.selected{ border-color:var(--olive); background:rgba(168,153,104,0.1); color:var(--olive-bright); }
+
+  .subteam-row{
+    display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-bottom:10px; align-items:center;
+  }
+  .remove-subteam{
+    width:34px; height:34px; border-radius:6px; background:var(--bad-bg); color:var(--bad); border:1px solid var(--bad);
+    cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center;
+  }
+  .add-subteam-btn{
+    width:100%; padding:10px; border-radius:6px; border:1.5px dashed var(--line); background:transparent;
+    color:var(--text-dim); font-size:12.5px; font-weight:600; cursor:pointer; margin-bottom:16px;
+  }
+
+  .btn{
+    padding:13px; border-radius:6px; border:none; font-weight:700; font-size:14px; cursor:pointer;
+  }
+  .btn-primary{ background:var(--olive); color:#0c0e0c; flex:1; }
+  .btn-ghost{ background:transparent; color:var(--text-dim); border:1px solid var(--line); flex:0 0 100px; }
+  .btn-row{ display:flex; gap:10px; margin-top:8px; }
+  button:disabled{ opacity:0.5; cursor:not-allowed; }
+
+  .error-box{
+    background:var(--bad-bg); border:1px solid var(--bad); color:#e8a89f; border-radius:6px;
+    padding:11px 13px; font-size:13px; margin-bottom:16px; display:none;
+  }
+  .success-box{ text-align:center; padding:40px 20px; display:none; }
+  .success-box h2{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:20px; text-transform:uppercase; color:var(--olive-bright); margin-bottom:10px; }
+  .success-box p{ font-size:13px; color:var(--text-dim); line-height:1.6; }
+
+  .step{ display:none; }
+  .step.active{ display:block; }
+  .helper-text{ font-size:11.5px; color:var(--text-dim); margin-top:-6px; margin-bottom:16px; line-height:1.4; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="brand-name">OPSTAC</div>
+      <div class="brand-sub">Tactical Operations Platform</div>
+    </div>
+
+    <div id="choiceView">
+      <h1>Get Started</h1>
+      <p class="lead">Are you starting a brand-new agency, or joining a team that's already using OpsTac?</p>
+      <div class="choice-row" style="flex-direction:column; gap:12px;">
+        <div class="choice-btn" id="choiceStart" style="padding:18px 16px; text-align:left;">
+          <div style="font-weight:700; margin-bottom:4px;">Start a New Agency</div>
+          <div style="font-size:11.5px; color:var(--text-dim); font-weight:400; text-transform:none; letter-spacing:normal;">You'll become the founding Commander.</div>
+        </div>
+        <div class="choice-btn" id="choiceJoin" style="padding:18px 16px; text-align:left;">
+          <div style="font-weight:700; margin-bottom:4px;">I'm Joining an Existing Team</div>
+          <div style="font-size:11.5px; color:var(--text-dim); font-weight:400; text-transform:none; letter-spacing:normal;">Your agency is already set up on OpsTac.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="joinInfoView" style="display:none;">
+      <h1>Join Your Team</h1>
+      <p class="lead">Enter the agency code your Commander gave you. They'll need to approve your request before you get access.</p>
+      <div class="error-box" id="joinErrorBox"></div>
+      <form id="joinForm">
+        <div class="field-group">
+          <label>Agency Code</label>
+          <input type="text" id="joinAgencyCode" placeholder="e.g. YR8WPP" maxlength="6" style="text-transform:uppercase; letter-spacing:2px; font-weight:700;" required>
+        </div>
+        <div class="field-group">
+          <label>Your Full Name</label>
+          <input type="text" id="joinName" required>
+        </div>
+        <div class="field-group">
+          <label>Email</label>
+          <input type="email" id="joinEmail" required>
+        </div>
+        <div class="field-group">
+          <label>Phone (optional)</label>
+          <input type="tel" id="joinPhone">
+        </div>
+        <div class="field-group">
+          <label>Create a Password</label>
+          <input type="password" id="joinPassword" minlength="8" required>
+        </div>
+        <button class="btn btn-block btn-primary" type="submit" id="joinSubmitBtn" style="margin-top:16px;">Request to Join</button>
+      </form>
+      <button class="btn btn-block btn-outline" id="backToChoice" type="button" style="margin-top:10px;">Back</button>
+    </div>
+
+    <div id="joinSuccessView" style="display:none;">
+      <h1>Request Sent</h1>
+      <p class="lead">Your request to join <strong id="joinSuccessAgencyName" style="color:var(--text);"></strong> has been sent. You'll get access as soon as your Commander approves it — no need to do anything else for now.</p>
+    </div>
+
+    <div id="formView" style="display:none;">
+      <div class="step-indicator" id="stepIndicator">
+        <div class="step-dot active" data-step="1"></div>
+        <div class="step-dot" data-step="2"></div>
+        <div class="step-dot" data-step="3"></div>
+      </div>
+
+      <div class="error-box" id="errorBox"></div>
+
+      <form id="signupForm">
+
+        <!-- STEP 1: Agency + Commander -->
+        <div class="step active" data-step="1">
+          <h1>Set Up Your Agency</h1>
+          <p class="lead">This creates your agency account and makes you the founding Commander.</p>
+          <div class="field-group">
+            <label>Agency Name</label>
+            <input type="text" id="agencyName" placeholder="e.g. Example County Sheriff's Office" required>
+          </div>
+          <div class="field-group">
+            <label>Your Full Name</label>
+            <input type="text" id="fullName" placeholder="e.g. Jane Smith" required>
+          </div>
+          <div class="row2">
+            <div class="field-group">
+              <label>Rank</label>
+              <input type="text" id="rank" placeholder="e.g. Lieutenant">
+            </div>
+            <div class="field-group">
+              <label>Phone</label>
+              <input type="tel" id="phone" placeholder="e.g. 555-555-0100">
+            </div>
+          </div>
+          <div class="field-group">
+            <label>Email</label>
+            <input type="email" id="email" required>
+          </div>
+          <div class="field-group">
+            <label>Password</label>
+            <input type="password" id="password" minlength="8" required>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="toStep2">Continue</button>
+          </div>
+        </div>
+
+        <!-- STEP 2: Team terminology -->
+        <div class="step" data-step="2">
+          <h1>What Do You Call Your Team?</h1>
+          <p class="lead">This sets the terminology used throughout the app — some agencies say SRT, others say SWAT or something else entirely.</p>
+          <div class="choice-row" id="teamLabelChoices">
+            <div class="choice-btn" data-value="SRT">SRT</div>
+            <div class="choice-btn" data-value="SWAT">SWAT</div>
+            <div class="choice-btn" data-value="Other">Other</div>
+          </div>
+          <div class="field-group" id="customLabelGroup" style="display:none;">
+            <label>Your Team's Name</label>
+            <input type="text" id="customTeamLabel" placeholder="e.g. Tactical Response Team">
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn btn-ghost" id="backTo1">Back</button>
+            <button type="button" class="btn btn-primary" id="toStep3">Continue</button>
+          </div>
+        </div>
+
+        <!-- STEP 3: Team structure -->
+        <div class="step" data-step="3">
+          <h1>Team Structure</h1>
+          <p class="lead">Some teams operate as a single unit. Others split into elements — Alpha/Bravo, Entry/Perimeter, etc.</p>
+          <div class="choice-row" id="structureChoices">
+            <div class="choice-btn" data-value="single">Single Team</div>
+            <div class="choice-btn" data-value="split">Split Into Sub-Teams</div>
+          </div>
+
+          <div id="subteamsSection" style="display:none;">
+            <label style="margin-bottom:10px; display:block;">Sub-Teams</label>
+            <div id="subteamRows"></div>
+            <button type="button" class="add-subteam-btn" id="addSubteamBtn">+ Add Another Sub-Team</button>
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn btn-ghost" id="backTo2">Back</button>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Create Agency Account</button>
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+    <div class="success-box" id="successView">
+      <h2 id="successHeading">Agency Created</h2>
+      <p id="successText">Your OpsTac agency account is ready. Signing you in...</p>
+      <a class="btn btn-primary" href="dashboard.html" id="goToDashboardBtn" style="display:none; margin-top:20px; text-decoration:none; display:inline-block;">Go to Dashboard</a>
+    </div>
+  </div>
+
+<script src="config.js"></script>
+<script>
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// If someone's already signed in and lands here anyway, don't let them
+// accidentally spin up a second, unrelated agency — send them to the
+// real app instead.
+supabaseClient.auth.getSession().then(({ data: { session } }) => {
+  if(session) window.location.href = 'dashboard.html';
+});
+
+document.getElementById('choiceStart').addEventListener('click', () => {
+  document.getElementById('choiceView').style.display = 'none';
+  document.getElementById('formView').style.display = 'block';
+});
+document.getElementById('choiceJoin').addEventListener('click', () => {
+  document.getElementById('choiceView').style.display = 'none';
+  document.getElementById('joinInfoView').style.display = 'block';
+});
+document.getElementById('backToChoice').addEventListener('click', () => {
+  document.getElementById('joinInfoView').style.display = 'none';
+  document.getElementById('choiceView').style.display = 'block';
+});
+
+document.getElementById('joinForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById('joinErrorBox');
+  errorBox.style.display = 'none';
+  const btn = document.getElementById('joinSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const agencyCode = document.getElementById('joinAgencyCode').value.trim();
+  const name = document.getElementById('joinName').value.trim();
+  const email = document.getElementById('joinEmail').value.trim();
+  const phone = document.getElementById('joinPhone').value.trim();
+  const password = document.getElementById('joinPassword').value;
+
+  try {
+    const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({ email, password });
+    if (signUpError) {
+      errorBox.textContent = signUpError.message;
+      errorBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Request to Join';
+      return;
+    }
+    const accessToken = signUpData.session ? signUpData.session.access_token : null;
+    if (!accessToken) {
+      errorBox.textContent = 'Account created, but could not start a session. Please try signing in.';
+      errorBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Request to Join';
+      return;
+    }
+
+    const res = await fetch('/.netlify/functions/submit-join-request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken, agencyCode, name, phone }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorBox.textContent = data.error || 'Could not submit your request.';
+      errorBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Request to Join';
+      return;
+    }
+
+    document.getElementById('joinSuccessAgencyName').textContent = data.agencyName || 'your agency';
+    document.getElementById('joinInfoView').style.display = 'none';
+    document.getElementById('joinSuccessView').style.display = 'block';
+  } catch (err) {
+    errorBox.textContent = 'Network error — please try again.';
+    errorBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Request to Join';
+  }
+});
+
+let currentStep = 1;
+let teamLabel = null;
+let structureChoice = null;
+
+function goToStep(n){
+  currentStep = n;
+  document.querySelectorAll('.step').forEach(s => s.classList.toggle('active', +s.dataset.step === n));
+  document.querySelectorAll('.step-dot').forEach(d => {
+    const ds = +d.dataset.step;
+    d.classList.toggle('active', ds === n);
+    d.classList.toggle('done', ds < n);
+  });
+  document.getElementById('errorBox').style.display = 'none';
+}
+
+// Step 1 -> 2
+document.getElementById('toStep2').addEventListener('click', () => {
+  const required = ['agencyName','fullName','email','password'];
+  for(const id of required){
+    const el = document.getElementById(id);
+    if(!el.value.trim()){
+      showError('Please fill in all required fields before continuing.');
+      el.focus();
+      return;
+    }
+  }
+  if(document.getElementById('password').value.length < 8){
+    showError('Password must be at least 8 characters.');
+    return;
+  }
+  goToStep(2);
+});
+document.getElementById('backTo1').addEventListener('click', () => goToStep(1));
+
+// Step 2: team label choice
+document.querySelectorAll('#teamLabelChoices .choice-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#teamLabelChoices .choice-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    teamLabel = btn.dataset.value;
+    document.getElementById('customLabelGroup').style.display = teamLabel === 'Other' ? 'block' : 'none';
+  });
+});
+document.getElementById('toStep3').addEventListener('click', () => {
+  if(!teamLabel){
+    showError('Choose what your team calls itself.');
+    return;
+  }
+  if(teamLabel === 'Other' && !document.getElementById('customTeamLabel').value.trim()){
+    showError('Enter your team\'s name.');
+    return;
+  }
+  goToStep(3);
+});
+document.getElementById('backTo2').addEventListener('click', () => goToStep(2));
+
+// Step 3: structure choice
+let subteamCount = 0;
+function addSubteamRow(name, focus){
+  subteamCount++;
+  const row = document.createElement('div');
+  row.className = 'subteam-row';
+  row.innerHTML = `
+    <input type="text" class="subteam-name" placeholder="e.g. Alpha Team" value="${name||''}">
+    <input type="text" class="subteam-focus" placeholder="Focus (optional)" value="${focus||''}">
+    <div class="remove-subteam">×</div>
+  `;
+  row.querySelector('.remove-subteam').addEventListener('click', () => row.remove());
+  document.getElementById('subteamRows').appendChild(row);
+}
+document.getElementById('addSubteamBtn').addEventListener('click', () => addSubteamRow());
+
+document.querySelectorAll('#structureChoices .choice-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#structureChoices .choice-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    structureChoice = btn.dataset.value;
+    const section = document.getElementById('subteamsSection');
+    if(structureChoice === 'split'){
+      section.style.display = 'block';
+      if(document.getElementById('subteamRows').children.length === 0){
+        addSubteamRow('Alpha Team', 'Entry / Assault');
+        addSubteamRow('Bravo Team', 'Perimeter / Support');
+      }
+    } else {
+      section.style.display = 'none';
+    }
+  });
+});
+
+function showError(msg){
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+}
+
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if(!structureChoice){
+    showError('Choose how your team is structured.');
+    return;
+  }
+
+  let subteams = [];
+  if(structureChoice === 'split'){
+    subteams = [...document.querySelectorAll('.subteam-row')].map(row => ({
+      name: row.querySelector('.subteam-name').value.trim(),
+      focus: row.querySelector('.subteam-focus').value.trim(),
+    })).filter(t => t.name);
+    if(subteams.length < 2){
+      showError('Add at least two sub-teams, or choose Single Team instead.');
+      return;
+    }
+  }
+
+  const resolvedTeamLabel = teamLabel === 'Other'
+    ? document.getElementById('customTeamLabel').value.trim()
+    : teamLabel;
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  const payload = {
+    agencyName: document.getElementById('agencyName').value.trim(),
+    fullName: document.getElementById('fullName').value.trim(),
+    rank: document.getElementById('rank').value.trim(),
+    phone: document.getElementById('phone').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    password: document.getElementById('password').value,
+    teamLabel: resolvedTeamLabel,
+    subteams,
+  };
+
+  try {
+    const res = await fetch('/.netlify/functions/signup-agency', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showError(data.error || 'Something went wrong. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Create Agency Account';
+      return;
+    }
+
+    document.getElementById('formView').style.display = 'none';
+    document.getElementById('successView').style.display = 'block';
+
+    // Auto sign-in with the credentials just used, so they land in the
+    // dashboard already authenticated instead of typing them again.
+    const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+      email: payload.email,
+      password: payload.password,
+    });
+
+    if (signInError) {
+      document.getElementById('successText').textContent =
+        'Your OpsTac agency account is ready. Sign in to continue.';
+      document.getElementById('goToDashboardBtn').style.display = 'inline-block';
+      return;
+    }
+
+    document.getElementById('successText').textContent = 'Taking you to your dashboard...';
+    window.location.href = 'dashboard.html';
+  } catch (err) {
+    showError('Network error — please check your connection and try again.');
+    btn.disabled = false;
+    btn.textContent = 'Create Agency Account';
+  }
+});
+</script>
+</body>
+</html>
