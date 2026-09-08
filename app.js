@@ -89,8 +89,49 @@ $('#loginForm').addEventListener('submit', async (e) => {
   await onSignedIn();
 });
 
+$('#forgotPasswordLink').addEventListener('click', () => {
+  $('#loginForm').style.display = 'none';
+  $('#forgotPasswordLink').style.display = 'none';
+  $('#forgotPasswordForm').style.display = 'block';
+});
+$('#backToLoginLink').addEventListener('click', () => {
+  $('#forgotPasswordForm').style.display = 'none';
+  $('#forgotSuccessMsg').style.display = 'none';
+  $('#loginForm').style.display = 'block';
+  $('#forgotPasswordLink').style.display = 'block';
+});
+$('#forgotSubmitBtn').addEventListener('click', async () => {
+  const email2 = $('#forgotEmail').value.trim();
+  const errorBox2 = $('#forgotError');
+  errorBox2.style.display = 'none';
+  if(!email2){ errorBox2.textContent = 'Enter your email first.'; errorBox2.style.display = 'block'; return; }
+
+  const btn2 = $('#forgotSubmitBtn');
+  btn2.disabled = true; btn2.textContent = 'Sending...';
+  const { error: resetError } = await supabaseClient.auth.resetPasswordForEmail(email2, {
+    redirectTo: window.location.origin + '/app.html',
+  });
+  btn2.disabled = false; btn2.textContent = 'Send Reset Link';
+  if(resetError){
+    errorBox2.textContent = resetError.message;
+    errorBox2.style.display = 'block';
+    return;
+  }
+  $('#forgotPasswordForm').style.display = 'none';
+  $('#forgotSuccessMsg').style.display = 'block';
+});
+
+// Supabase only fires PASSWORD_RECOVERY for genuine password-reset links —
+// an invite link just fires a plain SIGNED_IN event, so without this check
+// an invited user would land straight in the app having never set a
+// password at all. Capture the URL hash at page load, before Supabase's
+// client can clear it, so we can still tell "this was an invite" even
+// after the async auth event fires.
+const initialUrlHash = window.location.hash;
+let isInviteLink = initialUrlHash.includes('type=invite');
+
 supabaseClient.auth.onAuthStateChange((event) => {
-  if(event === 'PASSWORD_RECOVERY'){
+  if(event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && isInviteLink)){
     $('#loginScreen').style.display = 'none';
     $('#setPasswordScreen').style.display = 'flex';
   }
@@ -112,6 +153,7 @@ $('#setPasswordForm').addEventListener('submit', async (e) => {
     btn.textContent = 'Set Password & Continue';
     return;
   }
+  isInviteLink = false;
   $('#setPasswordScreen').style.display = 'none';
   await onSignedIn();
 });
@@ -1863,6 +1905,32 @@ $$('.swatch').forEach(sw => sw.addEventListener('click', async () => {
 }));
 
 $('#photoLightbox').addEventListener('click', () => { $('#photoLightbox').style.display = 'none'; });
+
+$('#changePasswordBtn').addEventListener('click', async () => {
+  const newPw = $('#newPasswordField').value;
+  const confirmPw = $('#confirmPasswordField').value;
+  const errorBox = $('#changePasswordError');
+  const successBox = $('#changePasswordSuccess');
+  errorBox.style.display = 'none';
+  successBox.style.display = 'none';
+
+  if(newPw.length < 8){ errorBox.textContent = 'Password must be at least 8 characters.'; errorBox.style.display = 'block'; return; }
+  if(newPw !== confirmPw){ errorBox.textContent = 'Passwords do not match.'; errorBox.style.display = 'block'; return; }
+
+  const btn = $('#changePasswordBtn');
+  btn.disabled = true; btn.textContent = 'Updating...';
+  const { error } = await supabaseClient.auth.updateUser({ password: newPw });
+  btn.disabled = false; btn.textContent = 'Update Password';
+  if(error){
+    errorBox.textContent = error.message;
+    errorBox.style.display = 'block';
+    return;
+  }
+  $('#newPasswordField').value = '';
+  $('#confirmPasswordField').value = '';
+  successBox.textContent = 'Password updated.';
+  successBox.style.display = 'block';
+});
 
 checkExistingSession();
 $('#mSubteamCancel').addEventListener('click', () => $('#subteamSheet').classList.remove('active'));
