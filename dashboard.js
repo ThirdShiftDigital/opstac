@@ -80,6 +80,37 @@ $('#loginForm').addEventListener('submit', async (e) => {
   await onSignedIn();
 });
 
+$('#forgotPasswordLink').addEventListener('click', () => {
+  $('#loginForm').style.display = 'none';
+  $('#forgotPasswordLink').style.display = 'none';
+  $('#forgotPasswordForm').style.display = 'block';
+});
+$('#backToLoginLink').addEventListener('click', () => {
+  $('#forgotPasswordForm').style.display = 'none';
+  $('#forgotSuccessMsg').style.display = 'none';
+  $('#loginForm').style.display = 'block';
+  $('#forgotPasswordLink').style.display = 'block';
+});
+$('#forgotSubmitBtn').addEventListener('click', async () => {
+  const email = $('#forgotEmail').value.trim();
+  const errorBox = $('#forgotError');
+  errorBox.style.display = 'none';
+  if(!email){ errorBox.textContent = 'Enter your email first.'; errorBox.style.display = 'block'; return; }
+
+  const btn = $('#forgotSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Sending...';
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/dashboard.html',
+  });
+  btn.disabled = false; btn.textContent = 'Send Reset Link';
+  if(error){
+    errorBox.textContent = error.message;
+    errorBox.style.display = 'block';
+    return;
+  }
+  $('#forgotPasswordForm').style.display = 'none';
+  $('#forgotSuccessMsg').style.display = 'block';
+});
 $('#signOutBtn').addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
   location.reload();
@@ -1726,6 +1757,14 @@ async function loadSettings(){
       <div class="mono" style="font-size:22px; font-weight:700; letter-spacing:3px; color:var(--olive-bright); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:14px 18px; display:inline-block;">${agency ? agency.agency_code : '—'}</div>
     </div>
     <div class="settings-group">
+      <div class="settings-group-title">Change Password</div>
+      <div class="error-box" id="changePasswordError" style="display:none;"></div>
+      <div class="error-box" id="changePasswordSuccess" style="display:none; background:rgba(122,168,116,0.12); border-color:var(--good); color:var(--good);"></div>
+      <div class="field-group"><label class="field-label">New Password</label><input type="password" id="newPasswordField"></div>
+      <div class="field-group"><label class="field-label">Confirm New Password</label><input type="password" id="confirmPasswordField"></div>
+      <button class="btn btn-primary" id="changePasswordBtn">Update Password</button>
+    </div>
+    <div class="settings-group">
       <div class="settings-group-title">Team Leader Permissions</div>
       <div class="settings-row"><div><div class="settings-label">Edit Operations</div><div class="settings-sub">Map placement, pre-ops plan, debrief</div></div><div class="toggle-switch ${settings.team_leader_edit_ops?'on':''}" data-perm="team_leader_edit_ops"></div></div>
       <div class="settings-row"><div><div class="settings-label">Initiate Callouts</div><div class="settings-sub">Send activations, track acknowledgments</div></div><div class="toggle-switch ${settings.team_leader_callouts?'on':''}" data-perm="team_leader_callouts"></div></div>
@@ -1759,6 +1798,32 @@ async function loadSettings(){
     </div>
   `;
 
+  $('#changePasswordBtn').addEventListener('click', async () => {
+    const newPw = $('#newPasswordField').value;
+    const confirmPw = $('#confirmPasswordField').value;
+    const errorBox = $('#changePasswordError');
+    const successBox = $('#changePasswordSuccess');
+    errorBox.style.display = 'none';
+    successBox.style.display = 'none';
+
+    if(newPw.length < 8){ errorBox.textContent = 'Password must be at least 8 characters.'; errorBox.style.display = 'block'; return; }
+    if(newPw !== confirmPw){ errorBox.textContent = 'Passwords do not match.'; errorBox.style.display = 'block'; return; }
+
+    const btn = $('#changePasswordBtn');
+    btn.disabled = true; btn.textContent = 'Updating...';
+    const { error } = await supabaseClient.auth.updateUser({ password: newPw });
+    btn.disabled = false; btn.textContent = 'Update Password';
+    if(error){
+      errorBox.textContent = error.message;
+      errorBox.style.display = 'block';
+      return;
+    }
+    $('#newPasswordField').value = '';
+    $('#confirmPasswordField').value = '';
+    successBox.textContent = 'Password updated.';
+    successBox.style.display = 'block';
+  });
+
   if(!isCommander){
     $$('.toggle-switch').forEach(t => { t.style.opacity = '0.5'; t.style.pointerEvents = 'none'; });
   } else {
@@ -1786,8 +1851,17 @@ async function loadSettings(){
 }
 
 // ---------- Invite acceptance (first login after being invited) ----------
+// Supabase only fires PASSWORD_RECOVERY for genuine password-reset links —
+// an invite link just fires a plain SIGNED_IN event, so without this check
+// an invited user would land straight in the app having never set a
+// password at all, with no way to log back in later. Capture the URL hash
+// immediately at page load, before Supabase's client can clear it, so we
+// can still tell "this was an invite" even after the async auth event fires.
+const initialUrlHash = window.location.hash;
+let isInviteLink = initialUrlHash.includes('type=invite');
+
 supabaseClient.auth.onAuthStateChange((event) => {
-  if(event === 'PASSWORD_RECOVERY'){
+  if(event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && isInviteLink)){
     $('#loginScreen').style.display = 'none';
     $('#setPasswordScreen').style.display = 'flex';
   }
@@ -1809,6 +1883,7 @@ $('#setPasswordForm').addEventListener('submit', async (e) => {
     btn.textContent = 'Set Password & Continue';
     return;
   }
+  isInviteLink = false;
   $('#setPasswordScreen').style.display = 'none';
   await onSignedIn();
 });
