@@ -1290,12 +1290,15 @@ async function loadTargetPhotos(operationId, editable){
     return;
   }
   const withUrls = await Promise.all(photos.map(async p => {
-    const { data } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
-    return { ...p, url: data ? data.signedUrl : '' };
+    const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
+    if(error){ console.error('loadTargetPhotos: could not get signed URL', { path: p.storage_path, error }); return { ...p, url: '', failed: true }; }
+    return { ...p, url: data.signedUrl, failed: false };
   }));
   grid.innerHTML = withUrls.map(p => `
     <div style="position:relative;">
-      <img src="${p.url}" data-expand-photo="${p.url}" style="width:80px; height:80px; object-fit:cover; border-radius:6px; border:1px solid var(--line); cursor:pointer;">
+      ${p.failed
+        ? `<div style="width:80px; height:80px; border-radius:6px; border:1px solid var(--bad); display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--bad); text-align:center; padding:4px;">Failed to load</div>`
+        : `<img src="${p.url}" data-expand-photo="${p.url}" style="width:80px; height:80px; object-fit:cover; border-radius:6px; border:1px solid var(--line); cursor:pointer;">`}
       ${editable ? `<button data-delete-photo="${p.id}" data-photo-path="${p.storage_path}" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--bad); color:#fff; border:none; cursor:pointer; font-size:12px; line-height:1;">×</button>` : ''}
     </div>
   `).join('');
@@ -1409,9 +1412,10 @@ $('#opPrintBtn').addEventListener('click', async () => {
   const w = window.open('', '_blank'); // open synchronously first — same popup-blocker fix as Signal group sends
   const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
   const photosWithUrls = await Promise.all((photos||[]).map(async p => {
-    const { data } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
-    return { ...p, url: data ? data.signedUrl : '' };
-  }));
+    const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
+    if(error){ console.error('Print report: could not get signed URL for photo', { path: p.storage_path, error }); return { ...p, url: '' }; }
+    return { ...p, url: data.signedUrl };
+  })).then(list => list.filter(p => p.url)); // drop any that failed rather than print a broken image silently
   const photosHtml = photosWithUrls.length > 0
     ? `<h3>Target Location Photos</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">${photosWithUrls.map(p => `<a href="${p.url}" target="_blank"><img src="${p.url}" style="width:160px; height:160px; object-fit:cover; border-radius:4px; cursor:pointer;"></a>`).join('')}</div>`
     : '';
@@ -1426,6 +1430,89 @@ $('#opPrintBtn').addEventListener('click', async () => {
     ${op.status==='complete' ? `<h3>Debrief</h3>${DEBRIEF_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.debrief||{})[f.key]||'—'}</p>`).join('')}` : ''}
   </body></html>`);
   w.document.close(); w.print();
+});
+
+$('#opPresentBtn').addEventListener('click', async () => {
+  const op = currentOpCache;
+  const btn = $('#opPresentBtn');
+  btn.style.pointerEvents = 'none'; btn.style.opacity = '0.5';
+
+  try {
+    const pres = new window.PptxGenJS();
+    pres.layout = 'LAYOUT_16x9';
+    const W = 10, MARGIN = 0.5;
+
+    let slide = pres.addSlide();
+    slide.background = { color: '0c0e0c' };
+    slide.addText(op.name, { x: MARGIN, y: 2.1, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
+    slide.addText(`${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.0, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
+
+    const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
+    slide = pres.addSlide();
+    slide.background = { color: '0c0e0c' };
+    slide.addText('Overview', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+    let y = 1.2;
+    if(commander){
+      slide.addText(`Overall Command: ${commander.name}`, { x: MARGIN, y, fontSize: 15, bold: true, color: 'e8e6df' });
+      y += 0.5;
+    }
+    slide.addText('Operators', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.4;
+    currentOperatorsCache.forEach(o => {
+      const m = memberById(o.member_id);
+      if(m){ slide.addText(`${m.name} — ${m.team_role||''}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.32; }
+    });
+
+    PLAN_FIELDS.forEach(f => {
+      const text = (op.plan||{})[f.key];
+      if(!text) return;
+      const s = pres.addSlide();
+      s.background = { color: '0c0e0c' };
+      s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+      s.addText(text, { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4, fontSize: 14, color: 'e8e6df', valign: 'top' });
+    });
+
+    const { data: linkedEquip } = await supabaseClient.from('operation_equipment').select('equipment_id').eq('operation_id', op.id);
+    if(linkedEquip && linkedEquip.length > 0){
+      const { data: allEquip } = await supabaseClient.from('equipment').select('id, item');
+      const names = linkedEquip.map(l => (allEquip||[]).find(e=>e.id===l.equipment_id)).filter(Boolean).map(e=>e.item);
+      if(names.length > 0){
+        const s = pres.addSlide();
+        s.background = { color: '0c0e0c' };
+        s.addText('Assets Utilized', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+        let yy = 1.2;
+        names.forEach(n => { s.addText(n, { x: MARGIN+0.2, y: yy, fontSize: 14, color: 'e8e6df' }); yy += 0.4; });
+      }
+    }
+
+    const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
+    for(const p of (photos||[])){
+      try {
+        const { data: signed, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
+        if(error || !signed){ console.error('Presentation export: could not get signed URL', { path: p.storage_path, error }); continue; }
+        const resp = await fetch(signed.signedUrl);
+        const blob = await resp.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        const s = pres.addSlide();
+        s.background = { color: '0c0e0c' };
+        s.addText('Target Location Photo', { x: MARGIN, y: 0.25, fontSize: 18, bold: true, color: 'c7b482' });
+        s.addImage({ data: dataUrl, x: MARGIN, y: 0.9, w: 9, h: 4.4 });
+      } catch(imgErr){
+        console.error('Presentation export: could not embed photo', { path: p.storage_path, error: imgErr });
+      }
+    }
+
+    await pres.writeFile({ fileName: `${op.name} - Pre-Ops Brief.pptx` });
+  } catch(err){
+    console.error('Presentation export failed', err);
+    alert('Could not generate the presentation. Please try again.');
+  } finally {
+    btn.style.pointerEvents = ''; btn.style.opacity = '';
+  }
 });
 
 // ---------- Callouts ----------
