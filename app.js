@@ -978,7 +978,7 @@ async function loadOpsList(){
       return `<div class="op-card" data-op-id="${o.id}">
         <div class="op-card-top"><div><div class="op-name">${o.name}</div><div class="op-meta">${o.type||''}</div></div>
         <span class="pill ${statusCls}"><span class="pill-dot"></span>${statusLabel}</span></div>
-        <div class="op-meta-row"><div class="op-meta-item">📅 ${o.date||''}</div><div class="op-meta-item">📍 ${o.location||''}${mapsLinkHtml(o.location)}</div></div>
+        <div class="op-meta-row"><div class="op-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${o.date||''}</div><div class="op-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>${o.location||''}${mapsLinkHtml(o.location)}</div></div>
       </div>`;
     }).join('');
     $$('#opsList .op-card').forEach(card => card.addEventListener('click', () => openOpDetail(card.dataset.opId)));
@@ -1477,7 +1477,7 @@ async function loadCalloutsIntoOpsList(){
           ${co.method ? `<div class="callout-method-tag" style="display:inline-block; vertical-align:top; margin-top:6px;">${methodLabel[co.method]||co.method}</div>` : ''}
           ${!co.active ? `<span class="flag oncall" style="margin-left:6px;">Resolved</span>` : ''}</div>
         ${co.rally_location ? `<div class="callout-meta" style="margin-top:6px;">Rally: ${co.rally_location}${mapsLinkHtml(co.rally_location)}</div>` : ''}
-        ${co.operations ? `<span class="flag" data-jump-op="${co.operations.id}" style="background:rgba(138,143,148,0.14); color:var(--steel); cursor:pointer; display:inline-block; margin-top:6px;">📋 ${co.operations.name}</span>` : ''}
+        ${co.operations ? `<span class="flag" data-jump-op="${co.operations.id}" style="background:rgba(138,143,148,0.14); color:var(--steel); cursor:pointer; display:inline-block; margin-top:6px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V3M8 11h8M8 15h5"/></svg>${co.operations.name}</span>` : ''}
         ${co.outcome ? `<div class="callout-outcome">${co.outcome}</div>` : ''}
         <div class="callout-ack-list">${rows}</div>
       </div></div>`;
