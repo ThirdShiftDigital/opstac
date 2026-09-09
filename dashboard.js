@@ -1422,7 +1422,7 @@ async function loadCallouts(){
     const acked = (c.callout_recipients||[]).filter(r => r.ack === 'acknowledged').length;
     const modeCls = c.mode === 'deploy' ? 'bad' : 'warn';
     const linkedOpTag = c.operations
-      ? `<span class="pill neutral" data-jump-op="${c.operations.id}" style="cursor:pointer; margin-top:6px; display:inline-block;">📋 ${c.operations.name}</span>`
+      ? `<span class="pill neutral" data-jump-op="${c.operations.id}" style="cursor:pointer; margin-top:6px; display:inline-block;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 3v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V3M8 11h8M8 15h5"/></svg>${c.operations.name}</span>`
       : '';
     const recipRows = (c.callout_recipients||[]).map(r => {
       const m = memberById(r.member_id);
