@@ -1413,7 +1413,12 @@ async function printOpReport(op, operators){
     </body></html>
   `);
   w.document.close();
-  w.print();
+  // Printing immediately after document.write() is a long-documented browser
+  // bug (calling print() before the new content has actually finished
+  // rendering captures a blank page instead). Waiting for the window's own
+  // load event — which also correctly waits for any photos to finish
+  // loading — is the standard fix.
+  w.onload = () => { w.focus(); w.print(); };
 }
 
 async function exportOpPresentation(op, operators){
