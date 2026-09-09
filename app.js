@@ -1430,7 +1430,13 @@ $('#opPrintBtn').addEventListener('click', async () => {
     <h3>Pre-Ops Plan</h3>${PLAN_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.plan||{})[f.key]||'—'}</p>`).join('')}
     ${op.status==='complete' ? `<h3>Debrief</h3>${DEBRIEF_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.debrief||{})[f.key]||'—'}</p>`).join('')}` : ''}
   </body></html>`);
-  w.document.close(); w.print();
+  w.document.close();
+  // Printing immediately after document.write() is a long-documented browser
+  // bug (calling print() before the new content has actually finished
+  // rendering captures a blank page instead). Waiting for the window's own
+  // load event — which also correctly waits for any photos to finish
+  // loading — is the standard fix.
+  w.onload = () => { w.focus(); w.print(); };
 });
 
 $('#opPresentBtn').addEventListener('click', async () => {
