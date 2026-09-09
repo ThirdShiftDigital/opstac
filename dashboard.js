@@ -1399,8 +1399,9 @@ async function printOpReport(op, operators){
   const rosterLines = operators.map(o => { const m = memberById(o.member_id); return m ? `<div>${m.name} — ${m.team_role||''}</div>` : ''; }).join('');
   const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
   w.document.write(`
-    <html><head><title>${op.name}</title></head>
+    <html><head><title>${op.name}</title><style>@media print{.no-print{display:none!important;}}</style></head>
     <body style="font-family:sans-serif; padding:40px; color:#111;">
+      <button class="no-print" onclick="window.close()" style="position:fixed; top:16px; right:16px; padding:10px 18px; background:#0c0e0c; color:#e8e6df; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; z-index:10;">✕ Close & Return to OpsTac</button>
       <h1>${op.name}</h1>
       <p>${op.type||''} · ${op.status} · ${op.date||''} · ${op.location||''}</p>
       ${commander ? `<p><strong>Overall Command:</strong> ${commander.name}</p>` : ''}
