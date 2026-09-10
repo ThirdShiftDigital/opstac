@@ -562,6 +562,58 @@
   }
 
   ::-webkit-scrollbar{ display:none; }
+
+  /* ---- Ops Log ---- */
+  .ops-log-wrap{ padding: 0 0 20px; }
+  .ops-log-input-bar{
+    position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line);
+    padding: 12px 14px calc(12px + var(--safe-bottom)); z-index: 5;
+  }
+  .ops-log-tags{ display:flex; gap:6px; overflow-x:auto; padding-bottom:10px; scrollbar-width:none; }
+  .ops-log-tags::-webkit-scrollbar{ display:none; }
+  .ops-log-tag{
+    flex:0 0 auto; padding:6px 10px; border-radius:4px; border:1px solid var(--line);
+    background: var(--bg-panel); color: var(--text-dim); font-size:11px; font-weight:600;
+    cursor:pointer; white-space:nowrap;
+  }
+  .ops-log-tag.active{ border-color: var(--olive); background: var(--olive-dim); color: var(--olive-bright); }
+  .ops-log-compose{ display:flex; gap:8px; align-items:flex-end; }
+  .ops-log-compose textarea{
+    flex:1; min-height:40px; max-height:90px; resize:none;
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
+    color: var(--text); font-family: Inter, sans-serif; font-size:13.5px; padding:10px 12px;
+  }
+  .ops-log-compose textarea:focus{ outline:none; border-color: var(--olive); }
+  .ops-log-add{
+    flex-shrink:0; height:40px; padding:0 14px; border-radius: var(--radius-sm);
+    background: var(--olive); color:#0a0b09; font-weight:700; font-size:13px; border:none; cursor:pointer;
+  }
+  .ops-log-list{ padding: 12px 14px 8px; display:flex; flex-direction:column; gap:10px; }
+  .ops-log-entry{
+    background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 11px 13px; position:relative;
+  }
+  .ops-log-entry.critical{ border-color: var(--olive); }
+  .ops-log-meta{ display:flex; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap; }
+  .ops-log-time{ font-family: 'JetBrains Mono', monospace; font-size:11px; color: var(--steel); }
+  .ops-log-tag-label{
+    font-size:10px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase;
+    color: var(--olive-bright); background: var(--olive-dim); padding:2px 7px; border-radius:3px;
+  }
+  .ops-log-author{ font-size:11px; color: var(--text-dim); margin-left:auto; }
+  .ops-log-text{ font-size:13.5px; line-height:1.45; color: var(--text); }
+  .ops-log-empty{ text-align:center; padding:36px 20px; color: var(--text-dim); font-size:13px; }
+  .ops-log-status-bar{
+    display:flex; gap:8px; padding:12px 14px 0; flex-wrap:wrap; align-items:center;
+  }
+  .ops-log-status-pill{
+    font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase;
+    padding:4px 9px; border-radius:4px; background: var(--bg-panel); border:1px solid var(--line); color: var(--text-dim);
+  }
+  .ops-log-status-pill.active-status{ background: var(--olive-dim); border-color: var(--olive); color: var(--olive-bright); }
+  .ops-log-status-pill.complete-status{ background: var(--good-bg); border-color: var(--good); color: var(--good); }
+  .ops-log-actions{ display:flex; gap:8px; margin-left:auto; }
+
 </style>
 </head>
 <body>
@@ -709,6 +761,7 @@
         <div class="subtab-row" id="opSubtabRow">
           <div class="subtab active" data-subtab="map">Map</div>
           <div class="subtab" data-subtab="plan">Pre-Ops Plan</div>
+          <div class="subtab" data-subtab="log">Ops Log</div>
           <div class="subtab" data-subtab="debrief">Debrief</div>
           <div class="subtab" data-subtab="callouts">Callouts</div>
         </div>
@@ -733,6 +786,9 @@
           <div id="planFields"></div>
         </div>
 
+        <div class="subpanel" id="opPanel-log">
+          <div id="opsLogContent"></div>
+        </div>
         <div class="subpanel" id="opPanel-debrief">
           <div id="debriefContent"></div>
         </div>

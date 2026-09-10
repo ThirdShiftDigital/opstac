@@ -1024,6 +1024,11 @@ async function openOpDetail(opId){
   await loadCorePersonnel();
   const { data: op } = await supabaseClient.from('operations').select('*').eq('id', opId).single();
   const { data: operators } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', opId);
+  // Normalize log: support top-level ops_log or nested under debrief._ops_log
+  if(op && !Array.isArray(op.ops_log) && op.debrief && Array.isArray(op.debrief._ops_log)){
+    op.ops_log = op.debrief._ops_log;
+  }
+  if(op && !Array.isArray(op.ops_log)) op.ops_log = [];
   renderOpDetail(op, operators || []);
   updateFab('operations');
 }
@@ -1038,6 +1043,7 @@ $$('.subtab').forEach(tab => tab.addEventListener('click', () => {
   $$('.subtab').forEach(t => t.classList.toggle('active', t===tab));
   $$('.subpanel').forEach(p => p.classList.toggle('active', p.id === `opPanel-${tab.dataset.subtab}`));
   if(tab.dataset.subtab === 'callouts' && currentOpId) renderOpCallouts(currentOpId);
+  if(tab.dataset.subtab === 'log' && currentOpCache) renderOpsLog(currentOpCache);
 }));
 $('#opCalloutBtn') && $('#opCalloutBtn').addEventListener('click', () => {
   if(currentOpCache) openCalloutSheet({ id: currentOpCache.id, name: currentOpCache.name });
@@ -1096,6 +1102,7 @@ function renderOpDetail(op, operators){
   renderMapImageState(op);
   renderMapPins(operators);
   renderPlan(op);
+  renderOpsLog(op);
   renderDebrief(op);
 }
 $('#opDeleteBtn').addEventListener('click', async () => {
@@ -1249,7 +1256,10 @@ function renderPlan(op){
     <div class="field-group"><label class="field-label">${f.label}</label>
       ${editable ? `<textarea class="field-textarea" data-plan-field="${f.key}" placeholder="Not yet filled in...">${plan[f.key]||''}</textarea>`
                  : `<div class="field-static ${plan[f.key]?'':'field-empty'}">${plan[f.key]||'Not yet filled in'}</div>`}
-    </div>`).join('') + (op.status==='planning' && editable ? `<button class="btn btn-block" id="completeOpBtn">Mark Operation Complete</button>` : '');
+    </div>`).join('') + (editable ? (
+      op.status==='planning' ? `<button class="btn btn-primary btn-block" id="activateOpBtn">Mark Operation Active</button>` :
+      op.status==='active' ? `<button class="btn btn-primary btn-block" id="completeOpBtn">Mark Operation Complete</button>` : ''
+    ) : '');
 
   loadTargetPhotos(op.id, editable);
   loadOpAssets(op.id, editable);
@@ -1280,11 +1290,35 @@ function renderPlan(op){
       await supabaseClient.from('operations').update({ plan: newPlan }).eq('id', currentOpId);
       currentOpCache.plan = newPlan;
     }));
+    const activateBtn = $('#activateOpBtn');
+    if(activateBtn) activateBtn.addEventListener('click', async () => {
+      await supabaseClient.from('operations').update({ status:'active' }).eq('id', currentOpId);
+      currentOpCache.status = 'active';
+      renderPlan(currentOpCache);
+      renderOpsLog(currentOpCache);
+      $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='log'));
+      $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-log'));
+    });
     const completeBtn = $('#completeOpBtn');
     if(completeBtn) completeBtn.addEventListener('click', async () => {
-      await supabaseClient.from('operations').update({ status:'complete', debrief:{} }).eq('id', currentOpId);
-      currentOpCache.status = 'complete'; currentOpCache.debrief = {};
+      // Build timeline from ops log if empty
+      const log = currentOpCache.ops_log || [];
+      let debrief = currentOpCache.debrief || {};
+      if(!debrief.timeline && log.length){
+        debrief = {
+          ...debrief,
+          timeline: log.slice().reverse().map(e => {
+            const t = new Date(e.ts);
+            const time = t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            return `[${time}] ${e.tag}${e.critical?' ★':''}: ${e.text}`;
+          }).join('\n')
+        };
+      }
+      await supabaseClient.from('operations').update({ status:'complete', debrief }).eq('id', currentOpId);
+      currentOpCache.status = 'complete';
+      currentOpCache.debrief = debrief;
       renderPlan(currentOpCache);
+      renderOpsLog(currentOpCache);
       renderDebrief(currentOpCache);
       $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
       $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
@@ -1358,13 +1392,164 @@ async function loadOpAssets(operationId, editable){
   }
 }
 
+
+// ---------- Ops Log ----------
+const OPS_LOG_TAGS = [
+  'Note', 'Decision', 'Movement', 'Entry / Breach',
+  'Suspect Contact', 'Suspect Custody', 'Use of Force', 'Shots Fired',
+  'Injury', 'Medical', 'Equipment', 'Command'
+];
+
+function renderOpsLog(op){
+  const el = $('#opsLogContent');
+  if(!el) return;
+  const editable = canEditOps();
+  const log = Array.isArray(op.ops_log) ? op.ops_log : [];
+  const status = op.status || 'planning';
+
+  const statusLabel = status === 'active' ? 'ACTIVE' : status === 'complete' ? 'COMPLETE' : 'PLANNING';
+  const statusCls = status === 'active' ? 'active-status' : status === 'complete' ? 'complete-status' : '';
+
+  let actionsHtml = '';
+  if(editable){
+    if(status === 'planning'){
+      actionsHtml = `<button class="btn btn-primary" id="logActivateBtn" style="font-size:12px; padding:7px 12px;">Mark Active</button>`;
+    } else if(status === 'active'){
+      actionsHtml = `<button class="btn btn-primary" id="logCompleteBtn" style="font-size:12px; padding:7px 12px;">Mark Complete</button>`;
+    }
+  }
+
+  const entriesHtml = log.length === 0
+    ? `<div class="ops-log-empty">No entries yet.<br>Log key events as they happen.</div>`
+    : `<div class="ops-log-list">${log.map(e => {
+        const t = new Date(e.ts);
+        const timeStr = isNaN(t) ? '' : t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        return `<div class="ops-log-entry ${e.critical ? 'critical' : ''}">
+          <div class="ops-log-meta">
+            <span class="ops-log-time">${timeStr}</span>
+            <span class="ops-log-tag-label">${e.tag || 'Note'}</span>
+            ${e.critical ? '<span style="color:var(--olive-bright); font-size:12px;">★</span>' : ''}
+            <span class="ops-log-author">${e.author || ''}</span>
+          </div>
+          <div class="ops-log-text">${escapeHtml(e.text || '')}</div>
+        </div>`;
+      }).join('')}</div>`;
+
+  const composeHtml = editable && status !== 'complete' ? `
+    <div class="ops-log-input-bar">
+      <div class="ops-log-tags" id="opsLogTags">
+        ${OPS_LOG_TAGS.map((tag,i) => `<div class="ops-log-tag ${i===0?'active':''}" data-tag="${tag}">${tag}</div>`).join('')}
+      </div>
+      <div class="ops-log-compose">
+        <textarea id="opsLogInput" placeholder="What just happened..." rows="1"></textarea>
+        <button class="ops-log-add" id="opsLogAddBtn">Add</button>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); cursor:pointer;">
+          <input type="checkbox" id="opsLogCritical" style="accent-color:var(--olive);"> Critical
+        </label>
+      </div>
+    </div>` : '';
+
+  el.innerHTML = `
+    <div class="ops-log-wrap">
+      <div class="ops-log-status-bar">
+        <span class="ops-log-status-pill ${statusCls}">${statusLabel}</span>
+        <div class="ops-log-actions">${actionsHtml}</div>
+      </div>
+      ${entriesHtml}
+      ${composeHtml}
+    </div>`;
+
+  // Wire events
+  if(editable && status !== 'complete'){
+    let selectedTag = 'Note';
+    $$('#opsLogTags .ops-log-tag').forEach(tagEl => {
+      tagEl.addEventListener('click', () => {
+        $$('#opsLogTags .ops-log-tag').forEach(t => t.classList.remove('active'));
+        tagEl.classList.add('active');
+        selectedTag = tagEl.dataset.tag;
+      });
+    });
+
+    const addEntry = async () => {
+      const input = $('#opsLogInput');
+      const text = (input?.value || '').trim();
+      if(!text) return;
+      const entry = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        ts: new Date().toISOString(),
+        tag: selectedTag,
+        text,
+        critical: !!$('#opsLogCritical')?.checked,
+        author: currentProfile?.full_name || 'Commander'
+      };
+      const newLog = [entry, ...(currentOpCache.ops_log || [])];
+      const { error } = await supabaseClient.from('operations').update({ ops_log: newLog }).eq('id', currentOpId);
+      if(error){
+        // Column may not exist yet — fall back to storing under debrief for compatibility
+        console.warn('ops_log update failed, trying nested store', error);
+        const debrief = { ...(currentOpCache.debrief || {}), _ops_log: newLog };
+        await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+        currentOpCache.debrief = debrief;
+      }
+      currentOpCache.ops_log = newLog;
+      input.value = '';
+      if($('#opsLogCritical')) $('#opsLogCritical').checked = false;
+      renderOpsLog(currentOpCache);
+    };
+
+    $('#opsLogAddBtn')?.addEventListener('click', addEntry);
+    $('#opsLogInput')?.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); addEntry(); }
+    });
+  }
+
+  $('#logActivateBtn')?.addEventListener('click', async () => {
+    await supabaseClient.from('operations').update({ status:'active' }).eq('id', currentOpId);
+    currentOpCache.status = 'active';
+    renderPlan(currentOpCache);
+    renderOpsLog(currentOpCache);
+  });
+  $('#logCompleteBtn')?.addEventListener('click', async () => {
+    const log = currentOpCache.ops_log || [];
+    let debrief = currentOpCache.debrief || {};
+    if(!debrief.timeline && log.length){
+      debrief = {
+        ...debrief,
+        timeline: log.slice().reverse().map(e => {
+          const t = new Date(e.ts);
+          const time = t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          return `[${time}] ${e.tag}${e.critical?' ★':''}: ${e.text}`;
+        }).join('\\n')
+      };
+    }
+    await supabaseClient.from('operations').update({ status:'complete', debrief }).eq('id', currentOpId);
+    currentOpCache.status = 'complete';
+    currentOpCache.debrief = debrief;
+    renderPlan(currentOpCache);
+    renderOpsLog(currentOpCache);
+    renderDebrief(currentOpCache);
+    $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
+    $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
+  });
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 const DEBRIEF_FIELDS = [
   { key:'outcome', label:'Outcome' }, { key:'timeline', label:'Timeline' }, { key:'injuries', label:'Injuries' },
   { key:'equipmentIssues', label:'Equipment Issues' }, { key:'lessonsLearned', label:'Lessons Learned' }, { key:'narrative', label:'Narrative Summary' },
 ];
 function renderDebrief(op){
   if(op.status !== 'complete'){
-    $('#debriefContent').innerHTML = `<div class="field-static field-empty">Debrief unlocks once the operation is marked complete from the Pre-Ops Plan tab.</div>`;
+    $('#debriefContent').innerHTML = `<div class="field-static field-empty">Debrief unlocks once the operation is marked complete. Use the Ops Log while the operation is active.</div>`;
     return;
   }
   const editable = canEditOps();
