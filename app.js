@@ -1836,6 +1836,7 @@ const OPS_QUICK_ACTIONS = [
   { label: 'Gas Deployed', tag: 'Gas', text: 'Gas deployed' },
   { label: 'Throw Phone', tag: 'Throw Phone', text: 'Throw phone deployed' },
   { label: 'Interior Drone', tag: 'Drone', text: 'Interior drone made entry' },
+  { label: 'Drone Down', tag: 'Drone', text: 'Interior drone went down' },
   { label: 'All Clear', tag: 'Note', text: 'All clear / scene secure' },
 ];
 
