@@ -613,7 +613,9 @@
   
   .map-toolbar{ display:flex; gap:8px; align-items:center; padding: 0 0 8px; }
   #stackPalette{ display:none; }
-  #newStackBtn, #checkInBtn, #geoJsonBtn{ font-size:11px; padding:5px 10px; }
+  #newStackBtn, #checkInBtn, #geoJsonBtn, #mapAddressGo{ font-size:11px; padding:5px 10px; }
+  .map-search{ display:flex; gap:6px; flex:1; min-width:140px; align-items:center; }
+  .map-search .field-input{ flex:1; min-width:0; font-size:12px; padding:6px 8px; }
   .map-rotate-bar{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-dim); padding:0 0 8px; }
   .map-rotate-bar input{ flex:1; accent-color: var(--olive); }
   .map-loc-pin[data-marker-type="vehicle"]{ border-color:#6b8f71; color:#b7d0b4; min-width:52px; }
@@ -915,6 +917,10 @@
             <button type="button" class="btn btn-primary" id="checkInBtn">Check In</button>
             <button type="button" class="btn btn-outline" id="geoJsonBtn" style="display:none;">GeoJSON</button>
             <input type="file" id="geoJsonInput" accept="*/*" style="display:none;">
+            <div class="map-search">
+              <input type="text" class="field-input" id="mapAddressInput" placeholder="Address..." autocomplete="off">
+              <button type="button" class="btn btn-outline" id="mapAddressGo">Go</button>
+            </div>
             <div class="map-hint" id="mapHint">Select, then tap the map.</div>
             <div class="stack-palette" id="stackPalette"></div>
           </div>

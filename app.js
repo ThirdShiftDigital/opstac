@@ -1600,6 +1600,24 @@ async function importGeoJSONFile(file){
   $('#mapHint').textContent = 'Loaded GeoJSON (' + count + ' feature' + (count===1?'':'s') + ').';
 }
 
+
+async function goToTypedAddress(){
+  const input = document.getElementById('mapAddressInput');
+  const q = (input && input.value || '').trim();
+  if(!q){ alert('Type an address first.'); return; }
+  const map = ensureLiveMap();
+  const hit = await geocodeAddress(q);
+  if(!hit){ alert('Could not find that address.'); return; }
+  map.setView([hit.lat, hit.lng], 18);
+  L.circleMarker([hit.lat, hit.lng], { radius: 7, color:'#d4b86a', fillColor:'#b59a4d', fillOpacity:0.9, weight:2 }).addTo(liveLayer);
+  const hint = document.getElementById('mapHint');
+  if(hint) hint.textContent = q;
+  if(currentOpCache && !currentOpCache.location){
+    currentOpCache.location = q;
+    supabaseClient.from('operations').update({ location: q }).eq('id', currentOpId);
+  }
+}
+
 async function geocodeAddress(q){
   if(!q) return null;
   try {
@@ -1625,6 +1643,8 @@ async function focusOpOnLiveMap(op){
     map.setView([withGeo[0].lat, withGeo[0].lng], 18);
     return;
   }
+  const addrInput = document.getElementById('mapAddressInput');
+  if(addrInput && op.location && !addrInput.value) addrInput.value = op.location;
   const hit = await geocodeAddress(op.location || op.name || '');
   if(hit) map.setView([hit.lat, hit.lng], 18);
 }
@@ -2091,6 +2111,12 @@ document.addEventListener('change', (e) => {
     e.target.value = '';
   }
 });
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && e.target && e.target.id === 'mapAddressInput'){
+    e.preventDefault();
+    goToTypedAddress();
+  }
+});
 document.addEventListener('input', (e) => {
   if(e.target && e.target.id === 'mapRotateSlider'){
     const deg = document.getElementById('mapRotateDeg');
@@ -2104,6 +2130,10 @@ document.addEventListener('change', (e) => {
 document.addEventListener('click', (e) => {
   if(e.target && e.target.closest('#checkInBtn')){
     checkIntoCurrentOp();
+    return;
+  }
+  if(e.target && e.target.closest('#mapAddressGo')){
+    goToTypedAddress();
     return;
   }
   if(e.target && e.target.closest('#geoJsonBtn')){
