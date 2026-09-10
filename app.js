@@ -1533,6 +1533,7 @@ async function checkIntoCurrentOp(){
 }
 
 const MAP_LOCATION_TYPES = [
+  { type: 'entry', label: 'Entry' },
   { type: 'command', label: 'Command' },
   { type: 'ems', label: 'EMS' },
   { type: 'lz', label: 'LZ' },
@@ -1676,25 +1677,39 @@ async function focusOpOnLiveMap(op){
   if(hit) map.setView([hit.lat, hit.lng], 18);
 }
 
+function liveGlyph(shape){
+  const stroke = '#0c0e0c';
+  if(shape === 'vehicle'){
+    return `<svg viewBox="0 0 64 32" width="42" height="22"><rect x="6" y="10" width="40" height="12" rx="2" fill="#1f2a22" stroke="#c7b482" stroke-width="2"/><rect x="28" y="4" width="16" height="8" rx="1" fill="#2a3328" stroke="#c7b482" stroke-width="1.5"/><circle cx="16" cy="24" r="4" fill="#111" stroke="#d4b86a"/><circle cx="42" cy="24" r="4" fill="#111" stroke="#d4b86a"/><rect x="8" y="12" width="6" height="4" fill="#7ec8e3"/></svg>`;
+  }
+  if(shape === 'ems' || shape === 'medic'){
+    return `<svg viewBox="0 0 48 32" width="40" height="26"><rect x="4" y="12" width="30" height="12" rx="2" fill="#f2d6d6" stroke="#8b3a3a" stroke-width="2"/><rect x="24" y="6" width="14" height="10" rx="1" fill="#e8a0a0" stroke="#8b3a3a"/><circle cx="14" cy="26" r="4" fill="#111"/><circle cx="34" cy="26" r="4" fill="#111"/><rect x="16" y="14" width="10" height="3" fill="#b00020"/><rect x="19.5" y="11" width="3" height="9" fill="#b00020"/></svg>`;
+  }
+  if(shape === 'lz'){
+    return `<svg viewBox="0 0 32 32" width="30" height="30"><circle cx="16" cy="16" r="14" fill="#0b3a4a" stroke="#7ec8e3" stroke-width="2"/><text x="16" y="21" text-anchor="middle" font-size="14" font-weight="800" fill="#7ec8e3" font-family="Inter,sans-serif">H</text></svg>`;
+  }
+  if(shape === 'rally'){
+    return `<svg viewBox="0 0 24 28" width="22" height="26"><path d="M4 2v24" stroke="#d4b86a" stroke-width="2"/><path d="M6 3h14l-4 6 4 6H6z" fill="#d4b86a"/></svg>`;
+  }
+  if(shape === 'command'){
+    return `<svg viewBox="0 0 32 28" width="30" height="26"><path d="M4 12 L16 4 L28 12 V24 H4Z" fill="#1a1e18" stroke="#d4b86a" stroke-width="2"/><rect x="13" y="16" width="6" height="8" fill="#d4b86a"/></svg>`;
+  }
+  if(shape === 'staging'){
+    return `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="4" y="10" width="20" height="12" fill="#1a1e18" stroke="#d4b86a" stroke-width="2"/><path d="M4 10 L14 4 L24 10" fill="#2a3328" stroke="#d4b86a" stroke-width="2"/></svg>`;
+  }
+  if(shape === 'stack' || shape === 'entry'){
+    return `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="7" r="4" fill="#facc15"/><circle cx="8" cy="16" r="4" fill="#eab308"/><circle cx="20" cy="16" r="4" fill="#eab308"/><circle cx="14" cy="24" r="3.5" fill="#ca8a04"/></svg>`;
+  }
+  if(shape === 'checkin'){
+    return `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 22s8-7 8-13a8 8 0 1 0-16 0c0 6 8 13 8 13z" fill="#6b9a5f"/></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="9" fill="#facc15"/></svg>`;
+}
 function liveIcon(label, color, rot, shape){
   const deg = Number(rot||0);
-  const bg = color || '#d4b86a';
-  const short = String(label||'').slice(0,6);
-  const inner = `<span>${short}</span>`;
-  let cls = 'lm-shape lm-square';
-  if(shape === 'vehicle') cls = 'lm-shape lm-vehicle';
-  else if(shape === 'medic' || shape === 'ems' || shape === 'person') cls = 'lm-shape lm-circle';
-  else if(shape === 'lz') cls = 'lm-shape lm-lz';
-  else if(shape === 'staging') cls = 'lm-shape lm-diamond';
-  else if(shape === 'rally') cls = 'lm-shape lm-tri';
-  else if(shape === 'stack') cls = 'lm-shape lm-chev';
-  else if(shape === 'checkin') cls = 'lm-shape lm-pin';
-  else if(shape === 'command') cls = 'lm-shape lm-square';
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);">
-      <div class="${cls}" style="background:${bg}; box-shadow:0 0 0 2px #0c0e0c;">${inner}</div>
-    </div>`,
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg); filter:drop-shadow(0 1px 2px #000);">${liveGlyph(shape)}</div>`,
     iconSize: [0,0],
     iconAnchor: [0,0]
   });
@@ -1793,6 +1808,19 @@ async function onLiveMapClick(e){
     const nsBtn = $('#newStackBtn'); if(nsBtn) nsBtn.textContent = '+ Stack';
     rebuildLiveMarkers(currentOpCache);
     renderStacks(currentOpCache);
+    return;
+  }
+  if(placingMarkerType === 'entry' || placingMarkerType === 'stack'){
+    const stacks = Array.isArray(currentOpCache.map_stacks) ? currentOpCache.map_stacks : [];
+    const st = { id: sid((crypto.randomUUID && crypto.randomUUID()) || ('stk-'+Date.now())), name:'Entry', lat, lng, x:50, y:50, members:[] };
+    await saveMapStacks([...stacks, st]);
+    placingMarkerType = false;
+    placingStack = false;
+    selectedStackId = sid(st.id);
+    rebuildLiveMarkers(currentOpCache);
+    renderStacks(currentOpCache);
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+    $('#mapHint').textContent = 'Entry placed. Add operators in order.';
     return;
   }
   if(placingMarkerType){
@@ -2220,6 +2248,7 @@ document.addEventListener('click', (e) => {
 if(!window._mapClickBound){
   window._mapClickBound = true;
   $('#mapCanvas').addEventListener('click', async (e) => {
+    if(liveMap) return;
     if(!canEditOps()) return;
     if(e.target.closest('#mapUploadPrompt') || e.target.closest('#mapChangeBtn') || e.target.closest('.map-pin') || e.target.closest('.map-stack-pin')) return;
     const rect = e.currentTarget.getBoundingClientRect();
