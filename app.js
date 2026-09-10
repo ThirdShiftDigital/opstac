@@ -1675,6 +1675,7 @@ function ensureLiveMap(){
   liveMap = L.map(el, { zoomControl: true, attributionControl: false });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
+    crossOrigin: true,
     attribution: 'Tiles © Esri'
   }).addTo(liveMap);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
@@ -3498,6 +3499,80 @@ async function blobToDataUrl(blob){
     reader.readAsDataURL(blob);
   });
 }
+
+async function snapshotLiveMap(){
+  const mapTab = document.querySelector('.subtab[data-subtab="map"]');
+  if(mapTab) mapTab.click();
+  const map = ensureLiveMap();
+  if(!map || !currentOpCache) return '';
+  await focusOpOnLiveMap(currentOpCache);
+  rebuildLiveMarkers(currentOpCache);
+  map.invalidateSize();
+  await new Promise(r => setTimeout(r, 700));
+  const b = map.getBounds();
+  const size = map.getSize();
+  const w = Math.max(640, size.x || 800);
+  const h = Math.max(360, size.y || 450);
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
+  const url = 'https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=' + encodeURIComponent(bbox) + '&bboxSR=4326&imageSR=4326&size=' + Math.round(w) + ',' + Math.round(h) + '&format=jpg&f=image';
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w);
+  canvas.height = Math.round(h);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0b100d';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  try {
+    const resp = await fetch(url);
+    if(resp.ok){
+      const blob = await resp.blob();
+      const src = URL.createObjectURL(blob);
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); URL.revokeObjectURL(src); resolve(); };
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+  } catch(e){ console.warn('tile still', e); }
+
+  function toXY(lat, lng){
+    const p = map.latLngToContainerPoint([lat, lng]);
+    return { x: p.x, y: p.y };
+  }
+  function stamp(x, y, label, color){
+    const tw = Math.max(36, ctx.measureText(label).width + 16);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(x-tw/2, y-12, tw, 24, 4);
+    else ctx.rect(x-tw/2, y-12, tw, 24);
+    ctx.fill();
+    ctx.fillStyle = '#0c0e0c';
+    ctx.font = 'bold 12px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y);
+  }
+  ctx.font = 'bold 12px Inter, sans-serif';
+  (currentOpCache.map_markers || []).forEach(mk => {
+    if(mk.lat == null) return;
+    const p = toXY(mk.lat, mk.lng);
+    const color = mk.type==='ems'||mk.type==='medic' ? '#c45c5c' : mk.type==='lz' ? '#7ec8e3' : mk.type==='vehicle' ? '#8fbf88' : '#d4b86a';
+    stamp(p.x, p.y, String(mk.label || mk.type || 'Mark').slice(0,10), color);
+  });
+  (currentOpCache.map_stacks || []).forEach(st => {
+    if(st.lat == null) return;
+    const p = toXY(st.lat, st.lng);
+    stamp(p.x, p.y, String(st.name || 'Entry').slice(0,10), '#e4c35a');
+  });
+  (currentOperatorsCache || []).forEach(o => {
+    if(o.lat == null) return;
+    const p = toXY(o.lat, o.lng);
+    const m = memberById(o.member_id);
+    stamp(p.x, p.y, operatorUnitLabel(m), '#e4c35a');
+  });
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
+
 async function captureOpMapDataUrl(op){
   try {
     if(op.map_image_url){
@@ -3599,58 +3674,15 @@ async function generateOpPresentation(op){
     }
 
     if(opt.map !== false){
+      const liveShot = await snapshotLiveMap();
       const slide = pres.addSlide();
       slide.background = { color: '0c0e0c' };
-      slide.addText('Placements', { x: MARGIN, y: 0.18, fontSize: 22, bold: true, color: 'c7b482' });
+      slide.addText('Map', { x: MARGIN, y: 0.18, fontSize: 22, bold: true, color: 'c7b482' });
       slide.addText(op.location || '', { x: MARGIN, y: 0.52, fontSize: 12, color: 'a89968' });
-      const items = [];
-      (op.map_markers || []).forEach(mk => items.push({
-        label: mk.label || mk.type || 'Mark',
-        kind: mk.type || 'mark',
-        lat: mk.lat, lng: mk.lng, x: mk.x, y: mk.y
-      }));
-      (op.map_stacks || []).forEach(st => items.push({
-        label: st.name || 'Entry',
-        kind: 'entry',
-        lat: st.lat, lng: st.lng, x: st.x, y: st.y
-      }));
-      (currentOperatorsCache || []).forEach(o => {
-        const m = memberById(o.member_id);
-        items.push({
-          label: operatorUnitLabel(m) + (o.role ? ' ' + o.role : ''),
-          kind: 'person',
-          lat: o.lat, lng: o.lng, x: o.x, y: o.y
-        });
-      });
-      const geo = items.filter(i => i.lat != null && i.lng != null);
-      const box = { x: 0.4, y: 0.85, w: 9.2, h: 4.3 };
-      slide.addShape(pres.ShapeType.rect, { x: box.x, y: box.y, w: box.w, h: box.h, fill: { color: '141814' }, line: { color: '2e3429', width: 1 } });
-      function posFor(it, idx){
-        if(geo.length >= 2 && it.lat != null){
-          const lats = geo.map(g => g.lat), lngs = geo.map(g => g.lng);
-          const minLa = Math.min(...lats), maxLa = Math.max(...lats);
-          const minLn = Math.min(...lngs), maxLn = Math.max(...lngs);
-          const dx = (maxLn - minLn) || 0.0001, dy = (maxLa - minLa) || 0.0001;
-          return {
-            x: box.x + 0.2 + ((it.lng - minLn) / dx) * (box.w - 1.2),
-            y: box.y + 0.2 + ((maxLa - it.lat) / dy) * (box.h - 0.8)
-          };
-        }
-        if(it.x != null && it.y != null){
-          return { x: box.x + (Number(it.x)/100) * (box.w - 0.8), y: box.y + (Number(it.y)/100) * (box.h - 0.5) };
-        }
-        const col = idx % 4, row = Math.floor(idx / 4);
-        return { x: box.x + 0.35 + col * 2.2, y: box.y + 0.4 + row * 0.7 };
-      }
-      const colorFor = kind => kind==='ems'||kind==='medic' ? 'c45c5c' : kind==='lz' ? '7ec8e3' : kind==='person' ? 'e4c35a' : kind==='entry' ? 'e4c35a' : kind==='vehicle' ? '8fbf88' : 'c7b482';
-      if(!items.length){
-        slide.addText('No placements yet.', { x: box.x + 0.3, y: box.y + 1.8, fontSize: 14, color: 'a89968' });
+      if(liveShot){
+        slide.addImage({ data: liveShot, x: 0.4, y: 0.78, w: 9.2, h: 4.4 });
       } else {
-        items.forEach((it, idx) => {
-          const p = posFor(it, idx);
-          slide.addShape(pres.ShapeType.roundRect, { x: p.x, y: p.y, w: 1.15, h: 0.36, fill: { color: colorFor(it.kind) }, rectRadius: 0.04 });
-          slide.addText(String(it.label).slice(0,14), { x: p.x, y: p.y + 0.04, w: 1.15, h: 0.28, fontSize: 9, bold: true, color: '0c0e0c', align: 'center' });
-        });
+        slide.addText('Open the Map tab once so the overlay can be captured.', { x: MARGIN, y: 2.4, fontSize: 14, color: 'a89968' });
       }
     }
 
