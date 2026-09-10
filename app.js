@@ -1581,6 +1581,46 @@ function renderStackEditor(){
   });
 }
 
+
+function getOpStacks(op){
+  return (op && Array.isArray(op.map_stacks)) ? op.map_stacks : [];
+}
+function stackMembersText(st){
+  return (st.members || []).map((m, i) => {
+    const p = memberById(m.member_id);
+    return `${i+1}. ${p ? p.name : 'Unknown'}`;
+  }).join('\n');
+}
+function individualAssignmentLines(operators){
+  return (operators || []).map(o => {
+    const m = memberById(o.member_id);
+    if(!m) return null;
+    return `${m.name}${o.role ? ' — ' + o.role : ''}`;
+  }).filter(Boolean);
+}
+function stacksPlanHtml(op){
+  const stacks = getOpStacks(op);
+  const individuals = individualAssignmentLines(currentOperatorsCache);
+  if(!stacks.length && !individuals.length){
+    return `<div class="field-static field-empty">No stacks or map assignments yet. Place them on the Map tab.</div>`;
+  }
+  const stackBlocks = stacks.map(st => {
+    const lines = (st.members || []).map((m, i) => {
+      const p = memberById(m.member_id);
+      return `<div style="display:flex; gap:8px; padding:4px 0;"><span class="stack-ord">${i+1}</span><span>${p ? p.name : 'Unknown'}</span></div>`;
+    }).join('') || `<div style="color:var(--text-dim); font-size:12.5px;">No operators assigned to this stack.</div>`;
+    return `<div style="background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:10px;">
+      <div style="font-family:Rajdhani,sans-serif; font-weight:700; text-transform:uppercase; font-size:14px; margin-bottom:6px;">${st.name || 'Stack'}</div>
+      ${lines}
+    </div>`;
+  }).join('');
+  const indiv = individuals.length
+    ? `<div style="margin-top:8px;">${individuals.map(l => `<div style="padding:5px 0; border-bottom:1px solid var(--line); font-size:13px;">${l}</div>`).join('')}</div>`
+    : '';
+  return `${stacks.length ? `<div class="field-label" style="margin-bottom:8px;">Stacks</div>${stackBlocks}` : ''}
+    ${individuals.length ? `<div class="field-label" style="margin:12px 0 6px;">Individual assignments</div>${indiv}` : ''}`;
+}
+
 const PLAN_FIELDS = [
   { key:'objective', label:'Objective' }, { key:'approach', label:'Approach / Entry Plan' },
   { key:'rallyPoint', label:'Rally Point' }, { key:'comms', label:'Communications Plan' },
@@ -1604,6 +1644,11 @@ function renderPlan(op){
     <div class="field-group">
       <label class="field-label">Overall Command</label>
       <select class="field-input" id="opCommanderSelect" ${!editable?'disabled':''}>${commanderOptions}</select>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Assignments &amp; Stacks</label>
+      <div id="planStacksSummary">${stacksPlanHtml(op)}</div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin-top:6px;">Managed on the Map tab. Changes there show up here, in print, and in the presentation.</div>
     </div>
     <div class="field-group">
       <label class="field-label">Assets Utilized</label>
@@ -2105,12 +2150,22 @@ $('#opPrintBtn').addEventListener('click', async () => {
     ? `<h3>Target Location Photos</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">${photosWithUrls.map(p => `<a href="${p.url}" target="_blank"><img src="${p.url}" style="width:160px; height:160px; object-fit:cover; border-radius:4px; cursor:pointer;"></a>`).join('')}</div>`
     : '';
   const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
-  const rosterLines = currentOperatorsCache.map(o => { const m = memberById(o.member_id); return m ? `<div>${m.name} — ${m.team_role||''}</div>` : ''; }).join('');
+  const rosterLines = currentOperatorsCache.map(o => { const m = memberById(o.member_id); return m ? `<div>${m.name}${o.role ? ' — ' + o.role : (m.team_role ? ' — ' + m.team_role : '')}</div>` : ''; }).join('');
+  const stacksPrintHtml = getOpStacks(op).length
+    ? `<h3>Stacks</h3>` + getOpStacks(op).map(st => {
+        const lines = (st.members||[]).map((m,i) => {
+          const p = memberById(m.member_id);
+          return `<div>${i+1}. ${p ? p.name : 'Unknown'}</div>`;
+        }).join('') || '<div>No operators assigned.</div>';
+        return `<p><strong>${st.name || 'Stack'}</strong></p>${lines}`;
+      }).join('')
+    : '';
   w.document.write(`<html><head><title>${op.name}</title><style>@media print{.no-print{display:none!important;}}</style></head><body style="font-family:sans-serif; padding:40px; color:#111;">
     <button class="no-print" onclick="window.close()" style="position:fixed; top:16px; right:16px; padding:10px 18px; background:#0c0e0c; color:#e8e6df; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; z-index:10;">✕ Close & Return to OpsTac</button>
     <h1>${op.name}</h1><p>${op.type||''} · ${op.status} · ${op.date||''} · ${op.location||''}</p>
     ${commander ? `<p><strong>Overall Command:</strong> ${commander.name}</p>` : ''}
     <h3>Operators</h3>${rosterLines || '<p>None assigned.</p>'}
+    ${stacksPrintHtml}
     ${photosHtml}
     <h3>Pre-Ops Plan</h3>${PLAN_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.plan||{})[f.key]||'—'}</p>`).join('')}
     ${op.status==='complete' ? `<h3>Debrief</h3>${DEBRIEF_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.debrief||{})[f.key]||'—'}</p>`).join('')}` : ''}
@@ -2151,8 +2206,26 @@ $('#opPresentBtn').addEventListener('click', async () => {
     slide.addText('Operators', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.4;
     currentOperatorsCache.forEach(o => {
       const m = memberById(o.member_id);
-      if(m){ slide.addText(`${m.name} — ${m.team_role||''}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.32; }
+      if(m){ slide.addText(`${m.name}${o.role ? ' — ' + o.role : (m.team_role ? ' — ' + m.team_role : '')}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.32; }
     });
+
+    const stacks = getOpStacks(op);
+    if(stacks.length){
+      const s = pres.addSlide();
+      s.background = { color: '0c0e0c' };
+      s.addText('Stacks', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+      let sy = 1.1;
+      stacks.forEach(st => {
+        s.addText(st.name || 'Stack', { x: MARGIN, y: sy, fontSize: 16, bold: true, color: 'd4b86a' });
+        sy += 0.35;
+        (st.members || []).forEach((m, i) => {
+          const p = memberById(m.member_id);
+          s.addText(`${i+1}. ${p ? p.name : 'Unknown'}`, { x: MARGIN+0.2, y: sy, fontSize: 14, color: 'e8e6df' });
+          sy += 0.32;
+        });
+        sy += 0.2;
+      });
+    }
 
     PLAN_FIELDS.forEach(f => {
       const text = (op.plan||{})[f.key];
