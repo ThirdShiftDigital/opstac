@@ -350,6 +350,13 @@ function listenForCalloutAlerts(){
           body: row.message || row.location || 'New activation'
         });
       })
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'callouts' }, payload => {
+        const row = payload.new || {};
+        fireCalloutAlert({
+          title: 'UPDATED ' + (row.mode === 'deploy' ? 'DEPLOY' : row.mode === 'standby' ? 'STANDBY' : 'CALLOUT') + (row.type ? ' — ' + row.type : ''),
+          body: row.message || row.location || 'Callout updated'
+        });
+      })
       .subscribe();
   } catch(e){ console.warn('callout alert channel', e); }
 }
@@ -3955,22 +3962,32 @@ $$('#calloutModeToggle .mode-btn').forEach(btn => btn.addEventListener('click', 
 let calloutLockedOp = null;
 
 
-let calloutMap = null;
-function ensureCalloutMap(){
-  const el = document.getElementById('calloutLiveMap');
+let calloutMaps = {};
+function ensureNamedMap(elId){
+  const el = document.getElementById(elId);
   if(!el || !window.L) return null;
-  if(calloutMap){ setTimeout(() => calloutMap.invalidateSize(), 80); return calloutMap; }
-  calloutMap = L.map(el, { zoomControl: true, attributionControl: false });
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(calloutMap);
-  calloutMap.setView([36.208, -86.291], 16);
-  return calloutMap;
+  if(calloutMaps[elId]){ setTimeout(() => calloutMaps[elId].invalidateSize(), 80); return calloutMaps[elId]; }
+  const map = L.map(el, { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(map);
+  map.setView([36.208, -86.291], 16);
+  calloutMaps[elId] = map;
+  return map;
+}
+function ensureCalloutMap(){ return ensureNamedMap('calloutLiveMap'); }
+async function focusNamedLiveMap(elId, q){
+  const map = ensureNamedMap(elId);
+  if(!map) return;
+  const hit = (q||'').trim() ? await geocodeAddress(q.trim()) : null;
+  if(hit) map.setView([hit.lat, hit.lng], 18);
+  setTimeout(() => map.invalidateSize(), 100);
 }
 async function focusCalloutLiveMap(){
-  const map = ensureCalloutMap();
-  if(!map) return;
   const q = (($('#calloutLocation') && $('#calloutLocation').value) || ($('#calloutRally') && $('#calloutRally').value) || (calloutLockedOp && calloutLockedOp.location) || '').trim();
-  const hit = q ? await geocodeAddress(q) : null;
-  if(hit) map.setView([hit.lat, hit.lng], 18);
+  await focusNamedLiveMap('calloutLiveMap', q);
+}
+async function focusEditCalloutLiveMap(){
+  const q = (($('#eCoLocation') && $('#eCoLocation').value) || ($('#eCoRally') && $('#eCoRally').value) || '').trim();
+  await focusNamedLiveMap('eCoLiveMap', q);
 }
 
 async function openCalloutSheet(lockedOp){
@@ -4201,6 +4218,7 @@ function openEditCalloutSheet(callout){
   }
 
   $('#editCalloutSheet').classList.add('active');
+  setTimeout(() => focusEditCalloutLiveMap(), 250);
 }
 $('#eCoRallyMapPrompt').addEventListener('click', () => $('#eCoRallyMapInput').click());
 $('#eCoRallyMapInput').addEventListener('change', async (e) => {
@@ -4254,8 +4272,10 @@ $('#eCoDelete').addEventListener('click', async () => {
   $('#editCalloutSheet').classList.remove('active');
   loadCalloutsIntoOpsList();
 });
+$('#eCoLocation') && $('#eCoLocation').addEventListener('change', focusEditCalloutLiveMap);
+$('#eCoRally') && $('#eCoRally').addEventListener('change', focusEditCalloutLiveMap);
 $('#eCoSave').addEventListener('click', async () => {
-  await supabaseClient.from('callouts').update({
+  const payload = {
     type: $('#eCoType').value.trim() || null,
     mode: eCoModeVal,
     location: $('#eCoLocation').value.trim() || null,
@@ -4265,7 +4285,12 @@ $('#eCoSave').addEventListener('click', async () => {
     outcome: $('#eCoOutcome').value.trim() || null,
     rally_map_image_url: eCoRallyMapPath, rally_map_ratio: eCoRallyMapRatio,
     rally_pin_x: eCoRallyPinX, rally_pin_y: eCoRallyPinY,
-  }).eq('id', editingCalloutId);
+  };
+  await supabaseClient.from('callouts').update(payload).eq('id', editingCalloutId);
+  fireCalloutAlert({
+    title: 'UPDATED ' + (eCoModeVal === 'deploy' ? 'DEPLOY' : eCoModeVal === 'standby' ? 'STANDBY' : 'CALLOUT') + (payload.type ? ' — ' + payload.type : ''),
+    body: payload.message || payload.location || 'Callout updated'
+  });
   $('#editCalloutSheet').classList.remove('active');
   loadCalloutsIntoOpsList();
 });

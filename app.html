@@ -1377,9 +1377,12 @@
         <div class="field-group"><label class="field-label">Location</label><input type="text" class="field-input" id="eCoLocation"></div>
         <div class="field-group"><label class="field-label">Rally Location</label><input type="text" class="field-input" id="eCoRally"></div>
         <div class="field-group">
-          <label class="field-label">Rally Point Map (optional)</label>
+          <label class="field-label">Live map</label>
+          <div class="map-canvas has-image" style="padding-top:0; height:220px; min-height:180px;">
+            <div id="eCoLiveMap" style="position:absolute; inset:0;"></div>
+          </div>
           <input type="file" accept="image/*" id="eCoRallyMapInput" style="display:none;">
-          <div class="map-canvas" id="eCoRallyMapCanvas">
+          <div class="map-canvas" id="eCoRallyMapCanvas" style="display:none;">
             <div class="map-upload-prompt" id="eCoRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
             <img id="eCoRallyMapImg" style="display:none;">
           </div>
