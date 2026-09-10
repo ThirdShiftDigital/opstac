@@ -1433,6 +1433,9 @@ function renderMapPins(operators){
         if(e.target.closest('.map-pin-remove')) return;
         e.preventDefault();
         e.stopPropagation();
+        try { pin.setPointerCapture(e.pointerId); } catch(_){}
+        pin.dataset.dragX = String(o.x);
+        pin.dataset.dragY = String(o.y);
         selectedPinMemberId = o.member_id;
         selectedStackId = null;
         armedOperatorId = null;
@@ -1461,6 +1464,8 @@ function renderMapPins(operators){
         };
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up);
+        pin.addEventListener('pointermove', move);
+        pin.addEventListener('pointerup', up);
       });
     }
     canvas.appendChild(pin);

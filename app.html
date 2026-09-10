@@ -436,12 +436,14 @@
   .map-compass{ position:absolute; top:10px; right:10px; width:26px; height:26px; opacity:0.5; }
   .map-scale{ position:absolute; bottom:8px; left:10px; font-family:'JetBrains Mono',monospace; font-size:8.5px; color: var(--steel-dim); letter-spacing:0.04em; }
   .map-pin{
-    position:absolute; width:28px; height:28px; border-radius:50%;
+    position:absolute; min-width:36px; min-height:36px; padding:4px 6px;
+    border-radius:8px;
     background:#facc15; color:#0c0e0c; font-size:10px; font-weight:700;
-    display:flex; align-items:center; justify-content:center;
-    transform: translate(-50%,-50%); cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    transform: translate(-50%,-50%); cursor:grab; touch-action:none;
     box-shadow: 0 0 0 3px rgba(250,204,21,0.3), 0 2px 6px rgba(0,0,0,0.5);
     border: 1.5px solid #0c0e0c;
+    z-index: 8;
   }
 
   /* ---- Plan / debrief forms ---- */
@@ -580,11 +582,7 @@
   .op-role-chip.active{
     border-color: var(--olive); background: var(--olive-dim); color: var(--olive-bright);
   }
-  .map-pin{
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-width: 32px; min-height: 32px; transform: translate(-50%, -50%);
-    z-index: 4;
-  }
+  .map-pin{ z-index: 8; }
   .map-pin.selected{
     z-index: 6; box-shadow: 0 0 0 2px var(--olive-bright);
   }
