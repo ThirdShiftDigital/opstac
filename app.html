@@ -435,6 +435,17 @@
   #mapLive{ background:#0b100d; }
   .leaflet-container{ font-family: Inter, sans-serif; background:#0b100d; }
   .live-map-icon{ background:none !important; border:none !important; }
+  .lm-shape{ display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#0c0e0c; line-height:1; }
+  .lm-circle{ width:28px; height:28px; border-radius:50%; }
+  .lm-square{ width:26px; height:26px; border-radius:3px; }
+  .lm-diamond{ width:24px; height:24px; transform:rotate(45deg); border-radius:3px; }
+  .lm-diamond span{ transform:rotate(-45deg); display:block; }
+  .lm-tri{ width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:24px solid #d4b86a; background:none; }
+  .lm-tri span{ position:absolute; margin-top:10px; color:#0c0e0c; }
+  .lm-vehicle{ width:40px; height:18px; border-radius:4px 10px 4px 4px; position:relative; }
+  .lm-chev{ width:28px; height:22px; clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%); }
+  .lm-pin{ width:22px; height:22px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); }
+  .lm-pin span{ transform:rotate(45deg); display:block; }
   .map-canvas .map-pin, .map-canvas .map-stack-pin, .map-canvas .map-loc-pin{ display:none !important; }
   #mapBgImage{
     position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none;
@@ -928,6 +939,7 @@
             <span>Rotate</span>
             <input type="range" id="mapRotateSlider" min="0" max="360" value="0">
             <span id="mapRotateDeg">0°</span>
+            <button type="button" class="btn btn-danger-outline" id="mapRemoveBtn" style="font-size:11px; padding:5px 10px;">Remove</button>
           </div>
           <div class="op-role-bar" id="opRoleBar" style="display:none;"></div>
           <div class="op-palette" id="opPalette"></div>

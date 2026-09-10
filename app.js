@@ -1395,6 +1395,33 @@ function refreshRotateBar(){
   slider.value = String(t.rot);
   if(deg) deg.textContent = Math.round(t.rot) + '°';
 }
+
+async function removeSelectedMapItem(){
+  const t = currentMapRotTarget();
+  if(!t) return;
+  if(!confirm('Remove this from the map?')) return;
+  if(t.kind === 'marker'){
+    const next = (currentOpCache.map_markers||[]).filter(m => sid(m.id) !== sid(t.id));
+    await saveMapMarkers(next);
+    selectedMarkerId = null;
+    renderMapMarkers(currentOpCache);
+  } else if(t.kind === 'stack'){
+    const next = (currentOpCache.map_stacks||[]).filter(s => !sameStack(s.id, t.id));
+    await saveMapStacks(next);
+    selectedStackId = null;
+    renderStacks(currentOpCache);
+  } else if(t.kind === 'pin'){
+    await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', t.id);
+    selectedPinMemberId = null;
+    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+    currentOperatorsCache = refreshed || [];
+    renderMapPins(currentOperatorsCache);
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+  }
+  rebuildLiveMarkers(currentOpCache);
+  refreshRotateBar();
+}
+
 async function applyMapRotation(rot){
   const t = currentMapRotTarget();
   if(!t) return;
@@ -1649,11 +1676,24 @@ async function focusOpOnLiveMap(op){
   if(hit) map.setView([hit.lat, hit.lng], 18);
 }
 
-function liveIcon(label, color, rot){
+function liveIcon(label, color, rot, shape){
   const deg = Number(rot||0);
+  const bg = color || '#d4b86a';
+  const short = String(label||'').slice(0,6);
+  const inner = `<span>${short}</span>`;
+  let cls = 'lm-shape lm-square';
+  if(shape === 'vehicle') cls = 'lm-shape lm-vehicle';
+  else if(shape === 'medic' || shape === 'person') cls = 'lm-shape lm-circle';
+  else if(shape === 'staging') cls = 'lm-shape lm-diamond';
+  else if(shape === 'rally') cls = 'lm-shape lm-tri';
+  else if(shape === 'stack') cls = 'lm-shape lm-chev';
+  else if(shape === 'checkin') cls = 'lm-shape lm-pin';
+  else if(shape === 'command') cls = 'lm-shape lm-square';
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="background:#10120f;border:1.5px solid ${color||'#b59a4d'};color:${color||'#d4b86a'};padding:3px 6px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;transform:translate(-50%,-50%) rotate(${deg}deg);">${label}</div>`,
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);">
+      <div class="${cls}" style="background:${bg}; box-shadow:0 0 0 2px #0c0e0c;">${inner}</div>
+    </div>`,
     iconSize: [0,0],
     iconAnchor: [0,0]
   });
@@ -1668,7 +1708,7 @@ function rebuildLiveMarkers(op){
   (op.map_markers || []).forEach(mk => {
     if(mk.lat == null || mk.lng == null) return;
     const m = L.marker([mk.lat, mk.lng], {
-      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : '#d4b86a', mk.rot),
+      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : mk.type==='medic' ? '#e8a0a0' : mk.type==='checkin' ? '#6b9a5f' : '#d4b86a', mk.rot, mk.type),
       draggable: editable,
       rotationAngle: Number(mk.rot||0)
     });
@@ -1684,7 +1724,7 @@ function rebuildLiveMarkers(op){
   (op.map_stacks || []).forEach(st => {
     if(st.lat == null || st.lng == null) return;
     const m = L.marker([st.lat, st.lng], {
-      icon: liveIcon(st.name || 'Stack', '#d4b86a', st.rot),
+      icon: liveIcon(st.name || 'Stack', '#d4b86a', st.rot, 'stack'),
       draggable: editable
     });
     m.on('click', (e) => { L.DomEvent.stop(e); selectedStackId = sid(st.id); selectedMarkerId = null; selectedPinMemberId = null; renderStackEditor(); refreshRotateBar && refreshRotateBar(); });
@@ -1701,7 +1741,7 @@ function rebuildLiveMarkers(op){
     const person = memberById(o.member_id);
     const label = person ? person.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
     const m = L.marker([o.lat, o.lng], {
-      icon: liveIcon((label + (o.role ? ' '+o.role : '')).trim(), '#facc15', o.rot),
+      icon: liveIcon((label + (o.role ? ' '+o.role : '')).trim(), '#facc15', o.rot, 'person'),
       draggable: editable
     });
     m.on('click', (e) => { L.DomEvent.stop(e); selectedPinMemberId = o.member_id; selectedStackId = null; selectedMarkerId = null; refreshRotateBar && refreshRotateBar(); });
@@ -1716,7 +1756,7 @@ function rebuildLiveMarkers(op){
 
   (op.checkins || []).forEach(c => {
     if(c.lat == null || c.lng == null) return;
-    L.marker([c.lat, c.lng], { icon: liveIcon((c.name||'CI').split(' ')[0] + ' CI', '#6b9a5f') })
+    L.marker([c.lat, c.lng], { icon: liveIcon((c.name||'CI').split(' ')[0] + ' CI', '#6b9a5f', 0, 'checkin') })
       .bindPopup(`${c.name||'Operator'}<br>${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}`)
       .addTo(liveLayer);
   });
@@ -2134,6 +2174,10 @@ document.addEventListener('click', (e) => {
   }
   if(e.target && e.target.closest('#mapAddressGo')){
     goToTypedAddress();
+    return;
+  }
+  if(e.target && e.target.closest('#mapRemoveBtn')){
+    removeSelectedMapItem();
     return;
   }
   if(e.target && e.target.closest('#geoJsonBtn')){
