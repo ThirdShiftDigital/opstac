@@ -533,5 +533,24 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
   }
 });
 </script>
+<script>
+function shouldKeepAutofill(el){
+  const type = (el.getAttribute('type') || el.type || '').toLowerCase();
+  if(type === 'password') return true;
+  const id = el.id || '';
+  return /^(joinEmail|joinPassword|email|password)$/i.test(id);
+}
+function disableAutofill(root){
+  (root || document).querySelectorAll('input, textarea, select').forEach(el => {
+    if(shouldKeepAutofill(el)) return;
+    el.setAttribute('autocomplete', 'off');
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('autocapitalize', 'none');
+  });
+}
+document.addEventListener('DOMContentLoaded', () => disableAutofill(document));
+document.getElementById('signupForm') && document.getElementById('signupForm').setAttribute('autocomplete','off');
+document.getElementById('joinForm') && document.getElementById('joinForm').setAttribute('autocomplete','off');
+</script>
 </body>
 </html>

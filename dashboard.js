@@ -1,3 +1,40 @@
+
+function shouldKeepAutofill(el){
+  const type = (el.getAttribute('type') || el.type || '').toLowerCase();
+  if(type === 'password') return true;
+  const id = el.id || '';
+  return /^(loginEmail|loginPassword|forgotEmail|newPassword|newPasswordField|confirmPasswordField|mfaChallengeCode|totpVerifyCode|joinEmail|joinPassword|email|password)$/i.test(id);
+}
+function disableAutofill(root){
+  (root || document).querySelectorAll('input, textarea, select').forEach(el => {
+    if(shouldKeepAutofill(el)) return;
+    el.setAttribute('autocomplete', 'off');
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('autocapitalize', 'none');
+    if((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && (el.type === 'text' || el.tagName === 'TEXTAREA' || !el.type)){
+      el.setAttribute('spellcheck', 'false');
+    }
+  });
+}
+if(!window._autofillGuard){
+  window._autofillGuard = true;
+  document.addEventListener('DOMContentLoaded', () => disableAutofill(document));
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if(!el || !el.matches || !el.matches('input, textarea, select')) return;
+    if(shouldKeepAutofill(el)) return;
+    el.setAttribute('autocomplete', 'off');
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('autocapitalize', 'none');
+  });
+  const mo = new MutationObserver((muts) => {
+    muts.forEach(m => m.addedNodes.forEach(n => {
+      if(n.nodeType === 1) disableAutofill(n);
+    }));
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+}
+
 // OpsTac Desktop Dashboard
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
