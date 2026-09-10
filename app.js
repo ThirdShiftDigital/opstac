@@ -1535,7 +1535,8 @@ async function checkIntoCurrentOp(){
 
 const MAP_LOCATION_TYPES = [
   { type: 'command', label: 'Command' },
-  { type: 'medic', label: 'Medic' },
+  { type: 'ems', label: 'EMS' },
+  { type: 'lz', label: 'LZ' },
   { type: 'rally', label: 'Rally' },
   { type: 'staging', label: 'Staging' },
   { type: 'vehicle', label: 'Vehicle' },
@@ -1683,7 +1684,8 @@ function liveIcon(label, color, rot, shape){
   const inner = `<span>${short}</span>`;
   let cls = 'lm-shape lm-square';
   if(shape === 'vehicle') cls = 'lm-shape lm-vehicle';
-  else if(shape === 'medic' || shape === 'person') cls = 'lm-shape lm-circle';
+  else if(shape === 'medic' || shape === 'ems' || shape === 'person') cls = 'lm-shape lm-circle';
+  else if(shape === 'lz') cls = 'lm-shape lm-lz';
   else if(shape === 'staging') cls = 'lm-shape lm-diamond';
   else if(shape === 'rally') cls = 'lm-shape lm-tri';
   else if(shape === 'stack') cls = 'lm-shape lm-chev';
@@ -1708,7 +1710,7 @@ function rebuildLiveMarkers(op){
   (op.map_markers || []).forEach(mk => {
     if(mk.lat == null || mk.lng == null) return;
     const m = L.marker([mk.lat, mk.lng], {
-      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : mk.type==='medic' ? '#e8a0a0' : mk.type==='checkin' ? '#6b9a5f' : '#d4b86a', mk.rot, mk.type),
+      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : (mk.type==='medic'||mk.type==='ems') ? '#e8a0a0' : mk.type==='lz' ? '#7ec8e3' : mk.type==='checkin' ? '#6b9a5f' : '#d4b86a', mk.rot, mk.type==='medic' ? 'ems' : mk.type),
       draggable: editable,
       rotationAngle: Number(mk.rot||0)
     });
@@ -1881,7 +1883,7 @@ function renderMapMarkers(op){
 
 const OP_ASSIGNMENT_ROLES = [
   'Entry', 'Perimeter', 'Overwatch', 'Breach', 'Cover',
-  'Less-Lethal', 'Medic', 'Command', 'Rear Security', 'Other'
+  'Less-Lethal', 'EMS', 'Command', 'Rear Security', 'Other'
 ];
 
 function renderMapPalette(op, operators){
@@ -1993,7 +1995,7 @@ function renderMapPalette(op, operators){
     renderMapPalette(currentOpCache, currentOperatorsCache);
     $('#mapHint').textContent = placingMarkerType
       ? `Tap the map to place ${chip.querySelector('.op-chip-label').textContent} — no operator will be attached.`
-      : 'Tap a person to assign, or a location chip to mark Command / Medic / Rally.';
+      : 'Tap a person to assign, or a location chip for Command / EMS / LZ.';
   }));
 
   $$('#opPalette .op-chip[data-stack-id]').forEach(chip => chip.addEventListener('click', () => {
