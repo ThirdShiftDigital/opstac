@@ -388,11 +388,11 @@
   .op-detail-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:17px; text-transform:uppercase; letter-spacing:0.02em; line-height:1.15; }
   .op-detail-sub{ font-size:11px; color:var(--text-dim); margin-top:2px; }
 
-  .subtab-row{ display:flex; gap:6px; padding: 14px 18px 0; }
+  .subtab-row{ display:flex; gap:4px; padding: 10px 14px 0; }
   .subtab{
-    flex:1; text-align:center; padding: 9px 4px; font-size:11.5px; font-weight:600;
-    color: var(--text-dim); background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
-    cursor:pointer; letter-spacing:0.01em;
+    flex:1; text-align:center; padding: 7px 2px; font-size:11px; font-weight:600;
+    color: var(--text-dim); background: transparent; border:1px solid transparent; border-radius: var(--radius-sm);
+    cursor:pointer;
   }
 
   .op-chat-wrap{ display:flex; flex-direction:column; height: min(62vh, 520px); }
@@ -406,20 +406,20 @@
   .op-chat-compose{ display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--line); }
   .op-chat-compose .field-input{ flex:1; }
   .subtab.active{ background: var(--olive); color:#0c0e0c; border-color: var(--olive); }
-  .subpanel{ display:none; padding: 16px 18px 10px; }
+  .subpanel{ display:none; padding: 10px 14px 8px; }
   .subpanel.active{ display:block; }
 
   /* ---- Map ---- */
-  .op-palette{ display:flex; gap:8px; overflow-x:auto; padding-bottom:12px; scrollbar-width:none; }
+  .op-palette{ display:flex; gap:6px; overflow-x:auto; padding: 4px 0 8px; scrollbar-width:none; }
   .op-palette::-webkit-scrollbar{ display:none; }
   .op-chip{
     flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px;
     cursor:pointer; padding: 5px; border-radius: var(--radius-sm); border:2px solid transparent;
   }
   .op-chip.armed{ border-color: var(--olive); background: rgba(168,153,104,0.08); }
-  .op-chip .mini-avatar{ width:36px; height:36px; font-size:12px; }
+  .op-chip .mini-avatar{ width:30px; height:30px; font-size:11px; }
   .op-chip-label{ font-size:8.5px; color:var(--text-dim); letter-spacing:0.01em; max-width:48px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .map-hint{ font-size:11px; color:var(--text-dim); margin-bottom:10px; }
+  .map-hint{ font-size:11px; color:var(--text-dim); margin:0; flex:1; }
   .map-canvas{
     position:relative; width:100%; padding-top:100%; border-radius: var(--radius); overflow:hidden;
     border:1px solid var(--line);
@@ -444,8 +444,8 @@
     border:1px solid var(--line); border-radius:14px; padding:5px 11px; font-size:10.5px; font-weight:600;
     color: var(--olive-bright); cursor:pointer; letter-spacing:0.01em;
   }
-  .map-compass{ position:absolute; top:10px; right:10px; width:26px; height:26px; opacity:0.5; }
-  .map-scale{ position:absolute; bottom:8px; left:10px; font-family:'JetBrains Mono',monospace; font-size:8.5px; color: var(--steel-dim); letter-spacing:0.04em; }
+  .map-compass{ display:none; }
+  .map-scale{ display:none; }
   .map-pin{
     position:absolute; min-width:36px; min-height:36px; padding:4px 6px;
     border-radius:8px;
@@ -458,7 +458,7 @@
   }
 
   /* ---- Plan / debrief forms ---- */
-  .field-group{ margin-bottom:16px; }
+  .field-group{ margin-bottom:12px; }
   .field-label{ font-size:10.5px; letter-spacing:0.01em; color: var(--text-dim); font-weight:600; margin-bottom:6px; display:block; }
   .field-textarea{
     width:100%; background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
@@ -578,12 +578,9 @@
 
   
   .op-chip.placed .op-chip-label{ color: var(--olive-bright); }
-  .op-chip-role{
-    font-size: 9px; color: var(--olive); letter-spacing: 0.02em; text-align: center;
-    max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  .op-chip-role{ display:none; }
   .op-role-bar{
-    display: none; flex-wrap: wrap; gap: 6px; padding: 8px 14px 4px;
+    display: none; flex-wrap: wrap; gap: 5px; padding: 0 0 8px;
   }
   .op-role-chip{
     padding: 6px 10px; border-radius: 4px; border: 1px solid var(--line);
@@ -612,7 +609,9 @@
   }
 
   
-  .map-toolbar{ display:flex; gap:8px; padding: 8px 14px 4px; }
+  .map-toolbar{ display:flex; gap:8px; align-items:center; padding: 0 0 8px; }
+  #stackPalette{ display:none; }
+  #newStackBtn{ font-size:11px; padding:5px 10px; }
   .stack-editor{
     margin: 8px 14px 10px; padding: 12px; background: var(--bg-panel);
     border: 1px solid var(--line); border-radius: var(--radius);
@@ -898,17 +897,17 @@
         </div>
         <div class="subtab-row" id="opSubtabRow">
           <div class="subtab active" data-subtab="map">Map</div>
-          <div class="subtab" data-subtab="plan">Pre-Ops Plan</div>
+          <div class="subtab" data-subtab="plan">Plan</div>
           <div class="subtab" data-subtab="chat">Chat</div>
-          <div class="subtab" data-subtab="log">Ops Log</div>
-          <div class="subtab" data-subtab="debrief">Debrief</div>
-          <div class="subtab" data-subtab="callouts">Callouts</div>
+          <div class="subtab" data-subtab="log">Log</div>
+          <div class="subtab" data-subtab="debrief">Brief</div>
+          <div class="subtab" data-subtab="callouts">Call</div>
         </div>
 
         <div class="subpanel active" id="opPanel-map">
-          <div class="map-hint" id="mapHint">Place individuals for perimeter/command. Use a stack for entry teams.</div>
           <div class="map-toolbar" id="mapToolbar">
-            <button type="button" class="btn btn-outline" id="newStackBtn" style="font-size:12px; padding:7px 12px;">+ New Stack</button>
+            <button type="button" class="btn btn-outline" id="newStackBtn">+ Stack</button>
+            <div class="map-hint" id="mapHint">Select, then tap the map.</div>
             <div class="stack-palette" id="stackPalette"></div>
           </div>
           <div class="op-role-bar" id="opRoleBar" style="display:none;"></div>
