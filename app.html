@@ -1154,7 +1154,7 @@
           <div class="settings-label">Push notifications</div>
           <div class="settings-sub">Callout & cert-expiry alerts</div>
         </div>
-        <span class="pill good"><span class="pill-dot"></span>On</span>
+        <button type="button" class="btn btn-outline" id="enablePushBtn" style="font-size:12px; padding:6px 10px;">Enable</button>
       </div>
     </section>
 
@@ -1433,9 +1433,12 @@
           <input type="text" class="field-input" id="calloutRally" placeholder="e.g. Staging at mile marker 4">
         </div>
         <div class="field-group">
-          <label class="field-label">Rally Point Map (optional)</label>
+          <label class="field-label">Live map</label>
+          <div class="map-canvas has-image" id="calloutLiveWrap" style="padding-top:0; height:220px; min-height:180px;">
+            <div id="calloutLiveMap" style="position:absolute; inset:0;"></div>
+          </div>
           <input type="file" accept="image/*" id="calloutRallyMapInput" style="display:none;">
-          <div class="map-canvas" id="calloutRallyMapCanvas">
+          <div class="map-canvas" id="calloutRallyMapCanvas" style="display:none;">
             <div class="map-upload-prompt" id="calloutRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
             <img id="calloutRallyMapImg" style="display:none;">
           </div>

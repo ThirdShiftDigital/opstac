@@ -277,6 +277,52 @@ document.addEventListener('click', (e) => {
   })();
 });
 
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(err => console.warn('sw', err));
+}
+
+async function enableHighPriorityAlerts(){
+  if(!('Notification' in window)){ alert('Notifications are not available on this device.'); return false; }
+  const perm = await Notification.requestPermission();
+  const btn = document.getElementById('enablePushBtn');
+  if(btn) btn.textContent = perm === 'granted' ? 'On' : 'Enable';
+  return perm === 'granted';
+}
+
+async function fireCalloutAlert({ title, body }){
+  const payload = { type:'CALLOUT', title: title || 'OpsTac Callout', body: body || 'New activation', url:'/app.html', tag:'opstac-callout' };
+  if(navigator.serviceWorker && navigator.serviceWorker.controller){
+    navigator.serviceWorker.controller.postMessage(payload);
+    return;
+  }
+  const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+  if(reg && Notification.permission === 'granted'){
+    return reg.showNotification(payload.title, {
+      body: payload.body, icon:'/icon-192.png', badge:'/icon-192.png',
+      requireInteraction:true, renotify:true, silent:false,
+      vibrate:[300,100,300], tag:'opstac-callout'
+    });
+  }
+  if(Notification.permission === 'granted'){
+    new Notification(payload.title, { body: payload.body, requireInteraction:true });
+  }
+}
+
+function listenForCalloutAlerts(){
+  if(!supabaseClient || !currentProfile) return;
+  try {
+    supabaseClient.channel('callout-alerts-' + currentProfile.agency_id)
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'callouts' }, payload => {
+        const row = payload.new || {};
+        fireCalloutAlert({
+          title: (row.mode === 'deploy' ? 'DEPLOY' : row.mode === 'standby' ? 'STANDBY' : 'CALLOUT') + (row.type ? ' — ' + row.type : ''),
+          body: row.message || row.location || 'New activation'
+        });
+      })
+      .subscribe();
+  } catch(e){ console.warn('callout alert channel', e); }
+}
+
 async function onSignedIn(){
   const { data: { user } } = await supabaseClient.auth.getUser();
   if(!user) return;
@@ -316,6 +362,7 @@ async function onSignedIn(){
 
   renderPermissionsSettings();
   loadPendingJoinRequests();
+  listenForCalloutAlerts();
   goToSection('overview');
 }
 
@@ -3788,6 +3835,25 @@ $$('#calloutModeToggle .mode-btn').forEach(btn => btn.addEventListener('click', 
 
 let calloutLockedOp = null;
 
+
+let calloutMap = null;
+function ensureCalloutMap(){
+  const el = document.getElementById('calloutLiveMap');
+  if(!el || !window.L) return null;
+  if(calloutMap){ setTimeout(() => calloutMap.invalidateSize(), 80); return calloutMap; }
+  calloutMap = L.map(el, { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(calloutMap);
+  calloutMap.setView([36.208, -86.291], 16);
+  return calloutMap;
+}
+async function focusCalloutLiveMap(){
+  const map = ensureCalloutMap();
+  if(!map) return;
+  const q = (($('#calloutLocation') && $('#calloutLocation').value) || ($('#calloutRally') && $('#calloutRally').value) || (calloutLockedOp && calloutLockedOp.location) || '').trim();
+  const hit = q ? await geocodeAddress(q) : null;
+  if(hit) map.setView([hit.lat, hit.lng], 18);
+}
+
 async function openCalloutSheet(lockedOp){
   calloutLockedOp = lockedOp || null;
   await loadCorePersonnel();
@@ -3814,6 +3880,7 @@ async function openCalloutSheet(lockedOp){
   if(calloutLockedOp){
     $('#calloutOpLockedGroup').style.display = 'block';
     $('#calloutOpLockedLabel').textContent = calloutLockedOp.name;
+    if(calloutLockedOp.location && $('#calloutLocation')) $('#calloutLocation').value = calloutLockedOp.location;
     $('#calloutOpPickerGroup').style.display = 'none';
     $('#calloutNewOpNameGroup').style.display = 'none';
   } else {
@@ -3839,6 +3906,7 @@ async function openCalloutSheet(lockedOp){
     scopeNote.style.display = 'none';
   }
   $('#newCalloutSheet').classList.add('active');
+  setTimeout(() => focusCalloutLiveMap(), 200);
 }
 $('#calloutOperation') && $('#calloutOperation').addEventListener('change', () => {
   $('#calloutNewOpNameGroup').style.display = $('#calloutOperation').value === '__new__' ? 'block' : 'none';
@@ -3913,9 +3981,16 @@ async function finalizeCallout(method){
   }).select().single();
   if(callout){
     await supabaseClient.from('callout_recipients').insert([...calloutSelectedIds].map(id => ({ callout_id: callout.id, member_id: id, ack:'pending' })));
+    fireCalloutAlert({
+      title: ((callout.mode==='deploy'?'DEPLOY':callout.mode==='standby'?'STANDBY':'CALLOUT')) + (callout.type ? ' — '+callout.type : ''),
+      body: callout.message || callout.location || 'New activation'
+    });
   }
   return callout;
 }
+
+$('#calloutLocation') && $('#calloutLocation').addEventListener('change', focusCalloutLiveMap);
+$('#calloutRally') && $('#calloutRally').addEventListener('change', focusCalloutLiveMap);
 
 $('#sendCalloutText').addEventListener('click', async () => {
   const co = await finalizeCallout('text');
