@@ -1683,7 +1683,19 @@ function liveGlyph(shape){
     return `<svg viewBox="0 0 64 32" width="42" height="22"><rect x="6" y="10" width="40" height="12" rx="2" fill="#1f2a22" stroke="#c7b482" stroke-width="2"/><rect x="28" y="4" width="16" height="8" rx="1" fill="#2a3328" stroke="#c7b482" stroke-width="1.5"/><circle cx="16" cy="24" r="4" fill="#111" stroke="#d4b86a"/><circle cx="42" cy="24" r="4" fill="#111" stroke="#d4b86a"/><rect x="8" y="12" width="6" height="4" fill="#7ec8e3"/></svg>`;
   }
   if(shape === 'ems' || shape === 'medic'){
-    return `<svg viewBox="0 0 48 32" width="40" height="26"><rect x="4" y="12" width="30" height="12" rx="2" fill="#f2d6d6" stroke="#8b3a3a" stroke-width="2"/><rect x="24" y="6" width="14" height="10" rx="1" fill="#e8a0a0" stroke="#8b3a3a"/><circle cx="14" cy="26" r="4" fill="#111"/><circle cx="34" cy="26" r="4" fill="#111"/><rect x="16" y="14" width="10" height="3" fill="#b00020"/><rect x="19.5" y="11" width="3" height="9" fill="#b00020"/></svg>`;
+    return `<svg viewBox="0 0 64 36" width="44" height="25">
+      <rect x="2" y="14" width="46" height="13" rx="2.5" fill="#f4f6f8" stroke="#2a2f33" stroke-width="1.6"/>
+      <path d="M48 18 h8 l5 6 v3 h-13 z" fill="#f4f6f8" stroke="#2a2f33" stroke-width="1.6"/>
+      <rect x="6" y="17" width="12" height="7" rx="1" fill="#9fd4e8"/>
+      <rect x="22" y="16.5" width="11" height="8" rx="1" fill="#d9dee3"/>
+      <circle cx="16" cy="29" r="4.2" fill="#1a1c1e" stroke="#c7ccd1" stroke-width="1.2"/>
+      <circle cx="16" cy="29" r="1.6" fill="#6b7075"/>
+      <circle cx="42" cy="29" r="4.2" fill="#1a1c1e" stroke="#c7ccd1" stroke-width="1.2"/>
+      <circle cx="42" cy="29" r="1.6" fill="#6b7075"/>
+      <rect x="28" y="8" width="14" height="8" rx="1" fill="#c1121f"/>
+      <rect x="33.2" y="9.2" width="3.6" height="5.6" fill="#fff"/>
+      <rect x="31.2" y="11.2" width="7.6" height="1.8" fill="#fff"/>
+    </svg>`;
   }
   if(shape === 'lz'){
     return `<svg viewBox="0 0 32 32" width="30" height="30"><circle cx="16" cy="16" r="14" fill="#0b3a4a" stroke="#7ec8e3" stroke-width="2"/><text x="16" y="21" text-anchor="middle" font-size="14" font-weight="800" fill="#7ec8e3" font-family="Inter,sans-serif">H</text></svg>`;
