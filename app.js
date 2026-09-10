@@ -1569,20 +1569,43 @@ function renderStacks(op){
     pin.innerHTML = `<div class="map-stack-name">${st.name || 'Stack'}</div>
       <div class="map-stack-count">${(st.members||[]).length} in stack</div>
       ${names ? `<div class="map-stack-list">${names}</div>` : ''}`;
-    pin.addEventListener('click', (e) => {
-      e.stopPropagation();
+    pin.style.touchAction = 'none';
+    pin.addEventListener('pointerdown', (e) => {
       if(!editable) return;
-      if(placingStack) return;
-      // If already selected, keep it selected so the next map tap can move it
+      e.preventDefault();
+      e.stopPropagation();
       selectedStackId = sid(st.id);
       selectedPinMemberId = null;
       armedOperatorId = null;
-      renderStacks(currentOpCache);
-      renderStackEditor();
-      renderMapPalette(currentOpCache, currentOperatorsCache);
-      $('#mapHint').textContent = selectedStackId
-        ? 'Stack selected. Edit members below, tap map to move, or delete in the editor.'
-        : 'Place individuals for perimeter/command. Use a stack for entry teams.';
+      placingStack = false;
+      const canvasRect = () => canvas.getBoundingClientRect();
+      const move = (ev) => {
+        const rect = canvasRect();
+        const cx = ev.clientX - rect.left;
+        const cy = ev.clientY - rect.top;
+        const x = Math.max(3, Math.min(97, Math.round((cx / rect.width) * 1000) / 10));
+        const y = Math.max(3, Math.min(97, Math.round((cy / rect.height) * 1000) / 10));
+        pin.style.left = x + '%';
+        pin.style.top = y + '%';
+        pin.dataset.dragX = String(x);
+        pin.dataset.dragY = String(y);
+      };
+      const up = async (ev) => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        const x = parseFloat(pin.dataset.dragX);
+        const y = parseFloat(pin.dataset.dragY);
+        if(Number.isFinite(x) && Number.isFinite(y)){
+          const stacks = (currentOpCache.map_stacks || []).map(s =>
+            sameStack(s.id, st.id) ? { ...s, x, y } : s
+          );
+          await saveMapStacks(stacks);
+        }
+        renderStacks(currentOpCache);
+        renderMapPalette(currentOpCache, currentOperatorsCache);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
     });
     canvas.appendChild(pin);
   });
