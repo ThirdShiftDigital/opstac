@@ -2499,8 +2499,8 @@ function renderOpsLog(op){
         <span class="ops-log-status-pill ${statusCls}">${statusLabel}</span>
         <div class="ops-log-actions">${actionsHtml}</div>
       </div>
-      ${entriesHtml}
       ${composeHtml}
+      ${entriesHtml}
     </div>`;
 
   // Wire free-text
