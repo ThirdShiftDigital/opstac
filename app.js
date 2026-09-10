@@ -2652,105 +2652,171 @@ $('#opPrintBtn').addEventListener('click', async () => {
   w.onload = () => { w.focus(); w.print(); };
 });
 
-$('#opPresentBtn').addEventListener('click', async () => {
-  const op = currentOpCache;
-  const btn = $('#opPresentBtn');
-  btn.style.pointerEvents = 'none'; btn.style.opacity = '0.5';
+$('#opPresentBtn').addEventListener('click', () => {
+  if(!currentOpCache) return;
+  const sheet = $('#presentSetupSheet');
+  if(sheet) sheet.classList.add('active');
+  else generateOpPresentation(currentOpCache);
+});
+$('#presentSetupCancel') && $('#presentSetupCancel').addEventListener('click', () => {
+  $('#presentSetupSheet').classList.remove('active');
+});
+$('#presentSetupGo') && $('#presentSetupGo').addEventListener('click', async () => {
+  $('#presentSetupSheet').classList.remove('active');
+  await generateOpPresentation(currentOpCache);
+});
 
+async function captureOpMapDataUrl(op){
+  try {
+    if(!op.map_image_url) return '';
+    const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600);
+    if(error || !data) return '';
+    const resp = await fetch(data.signedUrl);
+    const blob = await resp.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch(e){ return ''; }
+}
+function presOpts(){
+  const o = { title:true, overview:true, map:true, assignments:true, plan:true, photos:true, assets:true, log:true };
+  document.querySelectorAll('.pres-opt').forEach(cb => { o[cb.dataset.opt] = cb.checked; });
+  return o;
+}
+async function generateOpPresentation(op){
+  const btn = $('#opPresentBtn');
+  if(btn){ btn.style.pointerEvents = 'none'; btn.style.opacity = '0.5'; }
+  const opt = presOpts();
   try {
     const pres = new window.PptxGenJS();
+    pres.layout = 'LAYOUT_WIDE';
     pres.layout = 'LAYOUT_16x9';
     const W = 10, MARGIN = 0.5;
-
     const patchData = await getAgencyPatchDataUrl();
-    let slide = pres.addSlide();
-    slide.background = { color: '0c0e0c' };
-    if(patchData){
-      slide.addImage({ data: patchData, x: 4.25, y: 0.7, w: 1.5, h: 1.5 });
-    }
-    slide.addText(op.name, { x: MARGIN, y: 2.4, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
-    slide.addText(`${currentAgency && currentAgency.name ? currentAgency.name + '  ·  ' : ''}${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.4, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
 
-    const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
-    slide = pres.addSlide();
-    slide.background = { color: '0c0e0c' };
-    slide.addText('Overview', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-    let y = 1.2;
-    if(commander){
-      slide.addText(`Overall Command: ${commander.name}`, { x: MARGIN, y, fontSize: 15, bold: true, color: 'e8e6df' });
-      y += 0.5;
+    if(opt.title !== false){
+      const slide = pres.addSlide();
+      slide.background = { color: '0c0e0c' };
+      if(patchData) slide.addImage({ data: patchData, x: 4.25, y: 0.7, w: 1.5, h: 1.5 });
+      slide.addText(op.name, { x: MARGIN, y: 2.4, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
+      slide.addText(`${currentAgency && currentAgency.name ? currentAgency.name + '  ·  ' : ''}${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.4, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
+      slide.addText('PRE-OPS BRIEF', { x: MARGIN, y: 4.2, w: W-MARGIN*2, h: 0.4, fontSize: 12, color: 'c7b482', align: 'center' });
     }
-    (op.attached_units || []).forEach(u => {
-      const cmd = u.commander_personnel_id ? memberById(u.commander_personnel_id) : null;
-      slide.addText(`${u.name || 'Team'}${cmd ? ' — ' + cmd.name : ''}`, { x: MARGIN, y, fontSize: 13, color: 'e8e6df' });
-      y += 0.32;
-    });
-    slide.addText('Operators', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.4;
-    currentOperatorsCache.forEach(o => {
-      const m = memberById(o.member_id);
-      if(m){ slide.addText(`${m.name}${o.role ? ' — ' + o.role : (m.team_role ? ' — ' + m.team_role : '')}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.32; }
-    });
 
-    const stacks = getOpStacks(op);
-    if(stacks.length){
-      const s = pres.addSlide();
-      s.background = { color: '0c0e0c' };
-      s.addText('Stacks', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-      let sy = 1.1;
-      stacks.forEach(st => {
-        s.addText(st.name || 'Stack', { x: MARGIN, y: sy, fontSize: 16, bold: true, color: 'd4b86a' });
-        sy += 0.35;
-        (st.members || []).forEach((m, i) => {
-          const p = memberById(m.member_id);
-          s.addText(`${i+1}. ${p ? p.name : 'Unknown'}`, { x: MARGIN+0.2, y: sy, fontSize: 14, color: 'e8e6df' });
-          sy += 0.32;
-        });
-        sy += 0.2;
+    if(opt.overview !== false){
+      const slide = pres.addSlide();
+      slide.background = { color: '0c0e0c' };
+      slide.addText('Overview', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+      let y = 1.1;
+      const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
+      slide.addText(`Overall Command: ${commander ? commander.name : 'Not designated'}`, { x: MARGIN, y, fontSize: 15, bold: true, color: 'e8e6df' });
+      y += 0.45;
+      (op.attached_units || []).forEach(u => {
+        const cmd = u.commander_personnel_id ? memberById(u.commander_personnel_id) : null;
+        slide.addText(`${u.name || 'Team'}${cmd ? ' — ' + cmd.name : ''}`, { x: MARGIN, y, fontSize: 13, color: 'e8e6df' });
+        y += 0.3;
       });
     }
 
-    PLAN_FIELDS.forEach(f => {
-      const text = (op.plan||{})[f.key];
-      if(!text) return;
-      const s = pres.addSlide();
-      s.background = { color: '0c0e0c' };
-      s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-      s.addText(text, { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4, fontSize: 14, color: 'e8e6df', valign: 'top' });
-    });
-
-    const { data: linkedEquip } = await supabaseClient.from('operation_equipment').select('equipment_id').eq('operation_id', op.id);
-    if(linkedEquip && linkedEquip.length > 0){
-      const { data: allEquip } = await supabaseClient.from('equipment').select('id, item');
-      const names = linkedEquip.map(l => (allEquip||[]).find(e=>e.id===l.equipment_id)).filter(Boolean).map(e=>e.item);
-      if(names.length > 0){
-        const s = pres.addSlide();
-        s.background = { color: '0c0e0c' };
-        s.addText('Assets Utilized', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-        let yy = 1.2;
-        names.forEach(n => { s.addText(n, { x: MARGIN+0.2, y: yy, fontSize: 14, color: 'e8e6df' }); yy += 0.4; });
+    if(opt.map !== false){
+      const mapData = await captureOpMapDataUrl(op);
+      const slide = pres.addSlide();
+      slide.background = { color: '0c0e0c' };
+      slide.addText('Map', { x: MARGIN, y: 0.2, fontSize: 22, bold: true, color: 'c7b482' });
+      if(mapData){
+        slide.addImage({ data: mapData, x: 0.4, y: 0.7, w: 9.2, h: 4.5 });
+      } else {
+        slide.addText('No map image uploaded.', { x: MARGIN, y: 2.4, fontSize: 16, color: 'a89968' });
       }
     }
 
-    const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
-    for(const p of (photos||[])){
-      try {
-        const { data: signed, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
-        if(error || !signed){ console.error('Presentation export: could not get signed URL', { path: p.storage_path, error }); continue; }
-        const resp = await fetch(signed.signedUrl);
-        const blob = await resp.blob();
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
+    if(opt.assignments !== false){
+      const slide = pres.addSlide();
+      slide.background = { color: '0c0e0c' };
+      slide.addText('Assignments', { x: MARGIN, y: 0.25, fontSize: 24, bold: true, color: 'c7b482' });
+      let y = 0.9;
+      slide.addText('Locations', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.3;
+      const markers = op.map_markers || [];
+      if(!markers.length){ slide.addText('None placed', { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.28; }
+      markers.forEach(mk => { slide.addText(mk.label || mk.type, { x: MARGIN+0.2, y, fontSize: 13, color: 'e8e6df' }); y += 0.28; });
+      y += 0.15;
+      slide.addText('Operators', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.3;
+      if(!currentOperatorsCache.length){ slide.addText('None placed', { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.28; }
+      currentOperatorsCache.forEach(o => {
+        const m = memberById(o.member_id);
+        if(m){ slide.addText(`${m.name}${o.role ? ' — ' + o.role : ''}`, { x: MARGIN+0.2, y, fontSize: 13, color: 'e8e6df' }); y += 0.28; }
+      });
+      (getOpStacks(op) || []).forEach(st => {
+        y += 0.1;
+        slide.addText(st.name || 'Stack', { x: MARGIN, y, fontSize: 13, bold: true, color: 'd4b86a' }); y += 0.28;
+        (st.members || []).forEach((m, i) => {
+          const p = memberById(m.member_id);
+          slide.addText(`${i+1}. ${p ? p.name : 'Unknown'}`, { x: MARGIN+0.2, y, fontSize: 13, color: 'e8e6df' }); y += 0.26;
         });
+      });
+    }
+
+    if(opt.plan !== false){
+      PLAN_FIELDS.forEach(f => {
         const s = pres.addSlide();
         s.background = { color: '0c0e0c' };
-        s.addText('Target Location Photo', { x: MARGIN, y: 0.25, fontSize: 18, bold: true, color: 'c7b482' });
-        s.addImage({ data: dataUrl, x: MARGIN, y: 0.9, w: 9, h: 4.4 });
-      } catch(imgErr){
-        console.error('Presentation export: could not embed photo', { path: p.storage_path, error: imgErr });
+        s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+        s.addText((op.plan && op.plan[f.key]) || 'Not yet filled in', { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4, fontSize: 14, color: 'e8e6df', valign: 'top' });
+      });
+    }
+
+    if(opt.assets !== false){
+      const { data: linkedEquip } = await supabaseClient.from('operation_equipment').select('equipment_id').eq('operation_id', op.id);
+      const s = pres.addSlide();
+      s.background = { color: '0c0e0c' };
+      s.addText('Assets Utilized', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+      let yy = 1.2;
+      if(linkedEquip && linkedEquip.length){
+        const { data: allEquip } = await supabaseClient.from('equipment').select('id, item');
+        const names = linkedEquip.map(l => (allEquip||[]).find(e=>e.id===l.equipment_id)).filter(Boolean).map(e=>e.item);
+        names.forEach(n => { s.addText(n, { x: MARGIN+0.2, y: yy, fontSize: 14, color: 'e8e6df' }); yy += 0.36; });
+      } else {
+        s.addText('None listed', { x: MARGIN, y: yy, fontSize: 14, color: 'a89968' });
       }
+    }
+
+    if(opt.photos !== false){
+      const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
+      if(!photos || !photos.length){
+        const s = pres.addSlide();
+        s.background = { color: '0c0e0c' };
+        s.addText('Target Location Photos', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+        s.addText('No photos uploaded.', { x: MARGIN, y: 1.2, fontSize: 14, color: 'a89968' });
+      }
+      for(const p of (photos||[])){
+        try {
+          const { data: signed, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
+          if(error || !signed) continue;
+          const resp = await fetch(signed.signedUrl);
+          const blob = await resp.blob();
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          const s = pres.addSlide();
+          s.background = { color: '0c0e0c' };
+          s.addText('Target Location Photo', { x: MARGIN, y: 0.25, fontSize: 18, bold: true, color: 'c7b482' });
+          s.addImage({ data: dataUrl, x: MARGIN, y: 0.9, w: 9, h: 4.4 });
+        } catch(imgErr){ console.error(imgErr); }
+      }
+    }
+
+    if(opt.log !== false){
+      const s = pres.addSlide();
+      s.background = { color: '0c0e0c' };
+      s.addText('Ops Log / Timeline', { x: MARGIN, y: 0.3, fontSize: 24, bold: true, color: 'c7b482' });
+      const timeline = (op.debrief && op.debrief.timeline) || buildTimelineFromLog(op.ops_log || []);
+      s.addText(timeline || 'No log entries.', { x: MARGIN, y: 1.0, w: W-MARGIN*2, h: 4.3, fontSize: 13, color: 'e8e6df', valign: 'top' });
     }
 
     await pres.writeFile({ fileName: `${op.name} - Pre-Ops Brief.pptx` });
@@ -2758,9 +2824,10 @@ $('#opPresentBtn').addEventListener('click', async () => {
     console.error('Presentation export failed', err);
     alert('Could not generate the presentation. Please try again.');
   } finally {
-    btn.style.pointerEvents = ''; btn.style.opacity = '';
+    if(btn){ btn.style.pointerEvents = ''; btn.style.opacity = ''; }
   }
-});
+}
+
 
 // ---------- Callouts ----------
 function toE164(phone){
