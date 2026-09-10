@@ -611,7 +611,10 @@
   
   .map-toolbar{ display:flex; gap:8px; align-items:center; padding: 0 0 8px; }
   #stackPalette{ display:none; }
-  #newStackBtn{ font-size:11px; padding:5px 10px; }
+  #newStackBtn, #checkInBtn{ font-size:11px; padding:5px 10px; }
+  .map-rotate-bar{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-dim); padding:0 0 8px; }
+  .map-rotate-bar input{ flex:1; accent-color: var(--olive); }
+  .map-loc-pin[data-marker-type="vehicle"]{ border-color:#6b8f71; color:#b7d0b4; min-width:52px; }
   .stack-editor{
     margin: 8px 14px 10px; padding: 12px; background: var(--bg-panel);
     border: 1px solid var(--line); border-radius: var(--radius);
@@ -907,8 +910,14 @@
         <div class="subpanel active" id="opPanel-map">
           <div class="map-toolbar" id="mapToolbar">
             <button type="button" class="btn btn-outline" id="newStackBtn">+ Stack</button>
+            <button type="button" class="btn btn-primary" id="checkInBtn">Check In</button>
             <div class="map-hint" id="mapHint">Select, then tap the map.</div>
             <div class="stack-palette" id="stackPalette"></div>
+          </div>
+          <div id="mapRotateBar" class="map-rotate-bar" style="display:none;">
+            <span>Rotate</span>
+            <input type="range" id="mapRotateSlider" min="0" max="360" value="0">
+            <span id="mapRotateDeg">0°</span>
           </div>
           <div class="op-role-bar" id="opRoleBar" style="display:none;"></div>
           <div class="op-palette" id="opPalette"></div>

@@ -1355,11 +1355,121 @@ function sameStack(a, b){ return sid(a) && sid(a) === sid(b); }
 
 
 
+
+function currentMapRotTarget(){
+  if(selectedMarkerId && currentOpCache){
+    const mk = (currentOpCache.map_markers||[]).find(m => sid(m.id)===sid(selectedMarkerId));
+    if(mk) return { kind:'marker', id: mk.id, rot: Number(mk.rot||0) };
+  }
+  if(selectedStackId && currentOpCache){
+    const st = (currentOpCache.map_stacks||[]).find(s => sameStack(s.id, selectedStackId));
+    if(st) return { kind:'stack', id: st.id, rot: Number(st.rot||0) };
+  }
+  if(selectedPinMemberId){
+    const pin = (currentOperatorsCache||[]).find(o => o.member_id === selectedPinMemberId);
+    if(pin) return { kind:'pin', id: pin.member_id, rot: Number(pin.rot||0) };
+  }
+  return null;
+}
+function refreshRotateBar(){
+  const bar = $('#mapRotateBar');
+  const slider = $('#mapRotateSlider');
+  const deg = $('#mapRotateDeg');
+  if(!bar || !slider) return;
+  const t = currentMapRotTarget();
+  if(!t || !canEditOps()){ bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  slider.value = String(t.rot);
+  if(deg) deg.textContent = Math.round(t.rot) + '°';
+}
+async function applyMapRotation(rot){
+  const t = currentMapRotTarget();
+  if(!t) return;
+  rot = Math.max(0, Math.min(360, Number(rot)||0));
+  if(t.kind === 'marker'){
+    const next = (currentOpCache.map_markers||[]).map(m => sid(m.id)===sid(t.id) ? { ...m, rot } : m);
+    await saveMapMarkers(next);
+    renderMapMarkers(currentOpCache);
+  } else if(t.kind === 'stack'){
+    const next = (currentOpCache.map_stacks||[]).map(s => sameStack(s.id, t.id) ? { ...s, rot } : s);
+    await saveMapStacks(next);
+    renderStacks(currentOpCache);
+  } else if(t.kind === 'pin'){
+    await supabaseClient.from('operation_operators').update({ rot }).eq('operation_id', currentOpId).eq('member_id', t.id);
+    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+    currentOperatorsCache = refreshed || [];
+    renderMapPins(currentOperatorsCache);
+  }
+  refreshRotateBar();
+}
+
+function getCurrentPositionOnce(){
+  return new Promise((resolve) => {
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        acc: pos.coords.accuracy
+      }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  });
+}
+
+async function checkIntoCurrentOp(){
+  if(!currentOpCache || !currentOpId) return;
+  const share = confirm('Share this device location for this check-in?\n\nOK = use GPS this time.\nCancel = check in without location.');
+  let geo = null;
+  if(share){
+    geo = await getCurrentPositionOnce();
+    if(!geo) alert('Location was not available. Checking in without GPS.');
+  }
+  const name = (myPersonnel && myPersonnel.name) || (currentProfile && currentProfile.full_name) || 'Operator';
+  const entry = {
+    id: sid((crypto.randomUUID && crypto.randomUUID()) || ('ci-'+Date.now())),
+    ts: new Date().toISOString(),
+    name,
+    personnel_id: myPersonnel ? myPersonnel.id : null,
+    lat: geo && geo.lat,
+    lng: geo && geo.lng,
+    acc: geo && geo.acc
+  };
+  const list = Array.isArray(currentOpCache.checkins) ? currentOpCache.checkins : [];
+  const checkins = [entry, ...list];
+  const { error } = await supabaseClient.from('operations').update({ checkins }).eq('id', currentOpId);
+  if(error){
+    const debrief = { ...(currentOpCache.debrief||{}), _checkins: checkins };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+  currentOpCache.checkins = checkins;
+  const locTxt = geo ? ` @ ${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}` : ' (no GPS)';
+  await addOpsLogEntry({ tag: 'Movement', text: `Check-in — ${name}${locTxt}`, critical: false });
+  if(geo){
+    const markers = Array.isArray(currentOpCache.map_markers) ? currentOpCache.map_markers : [];
+    const label = name.split(' ')[0] + ' CI';
+    await saveMapMarkers([...markers, {
+      id: sid('ci-'+Date.now()),
+      type: 'checkin',
+      label,
+      x: 50, y: 50,
+      lat: geo.lat, lng: geo.lng
+    }]);
+    renderMapMarkers(currentOpCache);
+  }
+  $('#mapHint').textContent = geo
+    ? `${name} checked in with location. Drag the CI marker onto the map photo.`
+    : `${name} checked in without GPS.`;
+}
+
 const MAP_LOCATION_TYPES = [
   { type: 'command', label: 'Command' },
   { type: 'medic', label: 'Medic' },
   { type: 'rally', label: 'Rally' },
   { type: 'staging', label: 'Staging' },
+  { type: 'vehicle', label: 'Vehicle' },
 ];
 
 async function saveMapMarkers(markers){
@@ -1384,6 +1494,7 @@ function renderMapMarkers(op){
     pin.dataset.markerType = mk.type || '';
     pin.style.left = mk.x + '%';
     pin.style.top = mk.y + '%';
+    pin.style.transform = `translate(-50%,-50%) rotate(${Number(mk.rot||0)}deg)`;
     pin.innerHTML = `<div class="map-loc-label">${mk.label || mk.type || 'Mark'}</div>`;
     pin.style.touchAction = 'none';
     if(editable){
@@ -1432,6 +1543,7 @@ function renderMapMarkers(op){
     }
     canvas.appendChild(pin);
   });
+  if(typeof refreshRotateBar === 'function') refreshRotateBar();
 }
 
 const OP_ASSIGNMENT_ROLES = [
@@ -1630,6 +1742,7 @@ function renderMapPins(operators){
     pin.className = 'map-pin' + (selectedPinMemberId === o.member_id ? ' selected' : '');
     pin.style.left = o.x + '%';
     pin.style.top = o.y + '%';
+    pin.style.transform = `translate(-50%,-50%) rotate(${Number(o.rot||0)}deg)`;
     const initials = m.name.split(' ').map(w=>w[0]).slice(-2).join('');
     pin.innerHTML = `<span class="map-pin-label">${initials}</span>` +
       (o.role ? `<span class="map-pin-role">${o.role}</span>` : '') +
@@ -1694,11 +1807,25 @@ function renderMapPins(operators){
     }
     canvas.appendChild(pin);
   });
+  if(typeof refreshRotateBar === 'function') refreshRotateBar();
 }
 
 // Re-bind map click (remove old listeners by cloning would be complex; replace handler body via flag)
 
+document.addEventListener('input', (e) => {
+  if(e.target && e.target.id === 'mapRotateSlider'){
+    const deg = document.getElementById('mapRotateDeg');
+    if(deg) deg.textContent = e.target.value + '°';
+  }
+});
+document.addEventListener('change', (e) => {
+  if(e.target && e.target.id === 'mapRotateSlider') applyMapRotation(e.target.value);
+});
 document.addEventListener('click', (e) => {
+  if(e.target && e.target.closest('#checkInBtn')){
+    checkIntoCurrentOp();
+    return;
+  }
   const btn = e.target.closest('#newStackBtn');
   if(!btn) return;
   if(!canEditOps() || !currentOpCache) return;
@@ -1871,6 +1998,7 @@ function renderStacks(op){
     pin.className = 'map-stack-pin' + (sameStack(selectedStackId, st.id) ? ' selected' : '');
     pin.style.left = st.x + '%';
     pin.style.top = st.y + '%';
+    pin.style.transform = `translate(-50%,-50%) rotate(${Number(st.rot||0)}deg)`;
     const names = (st.members || []).map(m => {
       const p = memberById(m.member_id);
       return p ? p.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
@@ -1920,6 +2048,7 @@ function renderStacks(op){
   });
 
   renderStackEditor();
+  if(typeof refreshRotateBar === "function") refreshRotateBar();
 }
 
 function renderStackEditor(){
