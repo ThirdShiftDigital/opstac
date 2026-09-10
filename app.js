@@ -1561,30 +1561,42 @@ function refreshRotateBar(){
   if(deg) deg.textContent = Math.round(t.rot) + '°';
 }
 
-async function removeSelectedMapItem(){
-  const t = currentMapRotTarget();
-  if(!t) return;
-  if(!confirm('Remove this from the map?')) return;
-  if(t.kind === 'marker'){
-    const next = (currentOpCache.map_markers||[]).filter(m => sid(m.id) !== sid(t.id));
+async function removeMapItem(kind, id){
+  if(!kind || id == null) return;
+  if(kind === 'marker'){
+    const next = (currentOpCache.map_markers||[]).filter(m => sid(m.id) !== sid(id));
     await saveMapMarkers(next);
     selectedMarkerId = null;
     renderMapMarkers(currentOpCache);
-  } else if(t.kind === 'stack'){
-    const next = (currentOpCache.map_stacks||[]).filter(s => !sameStack(s.id, t.id));
+  } else if(kind === 'stack'){
+    const next = (currentOpCache.map_stacks||[]).filter(s => !sameStack(s.id, id));
     await saveMapStacks(next);
     selectedStackId = null;
     renderStacks(currentOpCache);
-  } else if(t.kind === 'pin'){
-    await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', t.id);
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+  } else if(kind === 'pin'){
+    await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', id);
     selectedPinMemberId = null;
     const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
     currentOperatorsCache = refreshed || [];
     renderMapPins(currentOperatorsCache);
     renderMapPalette(currentOpCache, currentOperatorsCache);
+  } else if(kind === 'checkin'){
+    const nextCi = (currentOpCache.checkins||[]).filter(c => sid(c.ts) !== sid(id) && sid(c.id) !== sid(id));
+    currentOpCache.checkins = nextCi;
+    await supabaseClient.from('operations').update({ checkins: nextCi }).eq('id', currentOpId);
+    const nextMk = (currentOpCache.map_markers||[]).filter(m => m.type !== 'checkin' || (sid(m.id) !== sid(id) && sid(m.ts) !== sid(id)));
+    await saveMapMarkers(nextMk);
+    renderCheckins(currentOpCache);
   }
   rebuildLiveMarkers(currentOpCache);
   refreshRotateBar();
+}
+async function removeSelectedMapItem(){
+  const t = currentMapRotTarget();
+  if(!t){ alert('Tap a pin first, then Remove.'); return; }
+  if(!confirm('Remove this from the map?')) return;
+  await removeMapItem(t.kind, t.id);
 }
 
 async function applyMapRotation(rot){
@@ -1918,6 +1930,23 @@ function liveIcon(label, color, rot, shape){
   });
 }
 
+
+function bindLiveRemove(marker, kind, id, title){
+  const html = `<div style="font-size:12px; font-weight:700; margin-bottom:6px;">${title||''}</div>
+    <button type="button" class="btn btn-danger-outline live-remove-btn" data-kind="${kind}" data-id="${id}" style="font-size:11px; padding:4px 8px;">Remove</button>`;
+  marker.bindPopup(html);
+  marker.on('popupopen', () => {
+    const btn = document.querySelector('.live-remove-btn');
+    if(!btn) return;
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if(!confirm('Remove this from the map?')) return;
+      await removeMapItem(btn.dataset.kind, btn.dataset.id);
+    });
+  });
+}
+
 function rebuildLiveMarkers(op){
   const map = ensureLiveMap();
   if(!map || !liveLayer) return;
@@ -1931,7 +1960,7 @@ function rebuildLiveMarkers(op){
       draggable: editable,
       rotationAngle: Number(mk.rot||0)
     });
-    m.bindPopup(mk.label || mk.type || 'Mark');
+    bindLiveRemove(m, 'marker', mk.id, mk.label || mk.type || 'Mark');
     m.on('click', (e) => { L.DomEvent.stop(e); selectedMarkerId = sid(mk.id); selectedStackId = null; selectedPinMemberId = null; refreshRotateBar && refreshRotateBar(); });
     m.on('dragend', async () => {
       const p = m.getLatLng();
@@ -1947,7 +1976,7 @@ function rebuildLiveMarkers(op){
       icon: liveIcon(st.name || 'Stack', '#d4b86a', st.rot, 'stack'),
       draggable: editable
     });
-    m.bindPopup(st.name || 'Stack');
+    bindLiveRemove(m, 'stack', st.id, st.name || 'Stack');
     m.on('click', (e) => { L.DomEvent.stop(e); selectedStackId = sid(st.id); selectedMarkerId = null; selectedPinMemberId = null; renderStackEditor(); refreshRotateBar && refreshRotateBar(); });
     m.on('dragend', async () => {
       const p = m.getLatLng();
@@ -1966,7 +1995,7 @@ function rebuildLiveMarkers(op){
       draggable: editable
     });
     const pname = person ? person.name : 'Operator';
-    m.bindPopup(pname + (o.role ? ' — ' + o.role : ''));
+    bindLiveRemove(m, 'pin', o.member_id, pname + (o.role ? ' — ' + o.role : ''));
     m.on('click', (e) => { L.DomEvent.stop(e); selectedPinMemberId = o.member_id; selectedStackId = null; selectedMarkerId = null; refreshRotateBar && refreshRotateBar(); });
     m.on('dragend', async () => {
       const p = m.getLatLng();
@@ -1992,9 +2021,9 @@ function rebuildLiveMarkers(op){
     latestCi.push(c);
   });
   latestCi.forEach(c => {
-    L.marker([c.lat, c.lng], { icon: liveIcon('CI', '#6b9a5f', 0, 'checkin') })
-      .bindPopup(`${c.name||'Operator'}<br>${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}`)
-      .addTo(liveLayer);
+    const cim = L.marker([c.lat, c.lng], { icon: liveIcon('CI', '#6b9a5f', 0, 'checkin') });
+    bindLiveRemove(cim, 'checkin', c.id || c.ts, (c.name||'Check-in'));
+    cim.addTo(liveLayer);
   });
 }
 
@@ -2254,9 +2283,16 @@ function renderMapPalette(op, operators){
     renderMapPalette(currentOpCache, currentOperatorsCache);
     renderStacks(currentOpCache);
     $('#mapHint').textContent = selectedStackId
-      ? 'Stack selected. Tap the map to move it.'
+      ? 'Stack selected. Tap Remove to delete it, or tap the map to move it.'
       : 'Tap a team member or stack, then tap the map.';
   }));
+  $$('#stackPalette .stack-chip').forEach(chip => {
+    chip.addEventListener('dblclick', async () => {
+      const id = chip.dataset.stackId;
+      if(!id || !confirm('Remove this stack from the map?')) return;
+      await removeMapItem('stack', id);
+    });
+  });
 }
 
 function renderMapImageState(op){
