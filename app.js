@@ -1204,6 +1204,17 @@ function renderMapPalette(op, operators){
   const editable = canEditOps();
   const focusId = armedOperatorId || selectedPinMemberId;
 
+  const stackChips = ((op && op.map_stacks) || []).map(st => {
+    const count = (st.members || []).length;
+    const on = sameStack(selectedStackId, st.id);
+    const label = (st.name || 'Stack');
+    return `<div class="op-chip ${on?'armed selected-chip placed':''}" data-stack-id="${sid(st.id)}">
+      <div class="mini-avatar" style="box-shadow:0 0 0 2px var(--olive);">${count || 'S'}</div>
+      <div class="op-chip-label">${label}</div>
+      <div class="op-chip-role">Stack</div>
+    </div>`;
+  }).join('');
+
   $('#opPalette').innerHTML = allPersonnel.map(p => {
     const placed = operators.find(o => o.member_id === p.id);
     const role = placed && placed.role ? placed.role : '';
@@ -1213,7 +1224,7 @@ function renderMapPalette(op, operators){
       <div class="op-chip-label">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
       ${role ? `<div class="op-chip-role">${role}</div>` : ''}
     </div>`;
-  }).join('');
+  }).join('') + stackChips;
 
   const roleBar = $('#opRoleBar');
   if(roleBar){
@@ -1253,7 +1264,7 @@ function renderMapPalette(op, operators){
   }
 
   if(!editable) return;
-  $$('.op-chip').forEach(chip => chip.addEventListener('click', () => {
+  $$('#opPalette .op-chip[data-member-id]').forEach(chip => chip.addEventListener('click', () => {
     const id = chip.dataset.memberId;
     const placed = operators.find(o => o.member_id === id);
     if(placed){
@@ -1277,6 +1288,19 @@ function renderMapPalette(op, operators){
     $('#mapHint').textContent = armedOperatorId
       ? `Place ${memberById(armedOperatorId).name} — choose role above, then tap the map.`
       : 'Tap a team member, choose a role, then tap the map.';
+  }));
+
+  $$('#opPalette .op-chip[data-stack-id]').forEach(chip => chip.addEventListener('click', () => {
+    const id = sid(chip.dataset.stackId);
+    selectedStackId = sameStack(selectedStackId, id) ? null : id;
+    selectedPinMemberId = null;
+    armedOperatorId = null;
+    placingStack = false;
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+    renderStacks(currentOpCache);
+    $('#mapHint').textContent = selectedStackId
+      ? 'Stack selected. Tap the map to move it.'
+      : 'Tap a team member or stack, then tap the map.';
   }));
 }
 
@@ -1423,6 +1447,7 @@ if(!window._mapClickBound){
       placingStack = false;
       selectedStackId = sid(st.id);
       renderStacks(currentOpCache);
+      renderMapPalette(currentOpCache, currentOperatorsCache);
       const nsBtn = $('#newStackBtn');
       if(nsBtn) nsBtn.textContent = '+ New Stack';
       $('#mapHint').textContent = 'Stack placed. Add operators in order below.';
@@ -1436,6 +1461,7 @@ if(!window._mapClickBound){
       );
       await saveMapStacks(stacks);
       renderStacks(currentOpCache);
+      renderMapPalette(currentOpCache, currentOperatorsCache);
       $('#mapHint').textContent = 'Stack moved. Tap map again to move, or tap the stack chip to deselect.';
       return;
     }
@@ -1546,8 +1572,9 @@ function renderStacks(op){
     pin.addEventListener('click', (e) => {
       e.stopPropagation();
       if(!editable) return;
-      if(placingStack) return; // don't steal New Stack placement
-      selectedStackId = sameStack(selectedStackId, st.id) ? null : sid(st.id);
+      if(placingStack) return;
+      // If already selected, keep it selected so the next map tap can move it
+      selectedStackId = sid(st.id);
       selectedPinMemberId = null;
       armedOperatorId = null;
       renderStacks(currentOpCache);
