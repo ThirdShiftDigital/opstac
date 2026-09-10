@@ -702,6 +702,7 @@ function openMemberSheet(existing){
   $('#mMemberName').value = existing ? existing.name : '';
   $('#mMemberRank').value = existing ? existing.rank||'' : '';
   $('#mMemberRole').value = existing ? existing.team_role||'' : '';
+  if($('#mMemberUnit')) $('#mMemberUnit').value = existing ? (existing.unit_number||existing.unit||'') : '';
   $('#mMemberPhone').value = existing ? existing.phone||'' : '';
   $('#mMemberStatus').value = existing ? existing.status : 'ready';
   populateSubteamSelect(existing);
@@ -744,6 +745,7 @@ $('#mMemberSave').addEventListener('click', async () => {
     name,
     rank: $('#mMemberRank').value.trim() || null,
     team_role: $('#mMemberRole').value.trim() || null,
+    unit_number: ($('#mMemberUnit') && $('#mMemberUnit').value.trim()) || null,
     subteam_id: $('#mMemberSubteam').value || null,
     phone: $('#mMemberPhone').value.trim() || null,
     status: $('#mMemberStatus').value,
@@ -1677,7 +1679,17 @@ async function focusOpOnLiveMap(op){
   if(hit) map.setView([hit.lat, hit.lng], 18);
 }
 
-function liveGlyph(shape){
+
+function operatorUnitLabel(person){
+  if(!person) return '?';
+  const raw = person.unit_number || person.unit || person.badge || person.callsign || '';
+  if(String(raw).trim()) return String(raw).trim().slice(0,4);
+  const fromName = String(person.name||'').match(/(\d{1,4})/);
+  if(fromName) return fromName[1];
+  return String(person.name||'?').split(' ').map(w => w[0]).join('').slice(0,3).toUpperCase();
+}
+
+function liveGlyph(shape, label){
   const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a';
   if(shape === 'ems' || shape === 'medic'){
     return `<svg viewBox="0 0 32 32" width="28" height="28">
@@ -1724,10 +1736,11 @@ function liveGlyph(shape){
       <path d="M16 28 C16 28 6 18 6 12 a10 10 0 1 1 20 0 C26 18 16 28 16 28z" fill="${g}"/></svg>`;
   }
   if(shape === 'person'){
-    return `<svg viewBox="0 0 32 32" width="24" height="24">
+    const t = String(label||'?').slice(0,4);
+    const size = t.length > 2 ? 9 : 11;
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
       <circle cx="16" cy="16" r="13" fill="#141814" stroke="${y}" stroke-width="2"/>
-      <circle cx="16" cy="12" r="3.2" fill="${y}"/>
-      <path d="M9 24c1.5-5 12.5-5 14 0" fill="${y}"/></svg>`;
+      <text x="16" y="20" text-anchor="middle" font-size="${size}" font-weight="800" fill="${y}" font-family="Inter,Rajdhani,sans-serif">${t}</text></svg>`;
   }
   return `<svg viewBox="0 0 32 32" width="24" height="24"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/></svg>`;
 }
@@ -1735,7 +1748,7 @@ function liveIcon(label, color, rot, shape){
   const deg = Number(rot||0);
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape)}</div>`,
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape, label)}</div>`,
     iconSize: [0,0],
     iconAnchor: [0,0]
   });
@@ -1785,7 +1798,7 @@ function rebuildLiveMarkers(op){
     const person = memberById(o.member_id);
     const label = person ? person.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
     const m = L.marker([o.lat, o.lng], {
-      icon: liveIcon(label, '#facc15', o.rot, 'person'),
+      icon: liveIcon(operatorUnitLabel(person), '#facc15', o.rot, 'person'),
       draggable: editable
     });
     const pname = person ? person.name : 'Operator';
