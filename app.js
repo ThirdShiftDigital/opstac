@@ -3715,10 +3715,7 @@ async function generateOpPresentation(op){
     if(opt.photos !== false){
       const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
       if(!photos || !photos.length){
-        const s = pres.addSlide();
-        s.background = { color: '0c0e0c' };
-        s.addText('Target Location Photos', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-        s.addText('No photos uploaded.', { x: MARGIN, y: 1.2, fontSize: 14, color: 'a89968' });
+        /* skip empty photo slide */
       }
       for(const p of (photos||[])){
         try {
