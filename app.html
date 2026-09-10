@@ -15,6 +15,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --bg: #080908;
@@ -429,17 +431,17 @@
       linear-gradient(90deg, rgba(168,153,104,0.12) 1px, transparent 1px);
     background-size: 12.5% 12.5%;
   }
-  .map-canvas.has-image{ background-image:none; padding-top:0; }
+  .map-canvas.has-image{ background-image:none; padding-top:0; height:360px; }
+  #mapLive{ background:#0b100d; }
+  .leaflet-container{ font-family: Inter, sans-serif; background:#0b100d; }
+  .live-map-icon{ background:none !important; border:none !important; }
+  .map-canvas .map-pin, .map-canvas .map-stack-pin, .map-canvas .map-loc-pin{ display:none !important; }
   #mapBgImage{
     position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none;
   }
-  .map-upload-prompt{
-    position:absolute; inset:14px; border:1.5px dashed var(--line); border-radius: var(--radius-sm);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
-    color: var(--steel-dim); text-align:center; cursor:pointer;
-  }
+  .map-upload-prompt{ display:none !important; }
   .map-upload-text{ font-size:12px; line-height:1.5; padding:0 20px; }
-  .map-change-btn{
+  .map-change-btn{ display:none !important;
     position:absolute; top:10px; left:10px; background: rgba(12,14,12,0.75); backdrop-filter: blur(4px);
     border:1px solid var(--line); border-radius:14px; padding:5px 11px; font-size:10.5px; font-weight:600;
     color: var(--olive-bright); cursor:pointer; letter-spacing:0.01em;
@@ -927,7 +929,8 @@
             <div id="checkinList"></div>
           </div>
           <input type="file" accept="image/*" id="mapImageInput" style="display:none">
-          <div class="map-canvas" id="mapCanvas">
+          <div class="map-canvas has-image" id="mapCanvas" style="padding-top:0; height:360px;">
+            <div id="mapLive" style="position:absolute; inset:0; z-index:2;"></div>
             <div class="map-upload-prompt" id="mapUploadPrompt">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               <div class="map-upload-text">Upload a satellite screenshot,<br>floor plan, or scene photo</div>

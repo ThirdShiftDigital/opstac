@@ -1163,6 +1163,7 @@ $$('.subtab').forEach(tab => tab.addEventListener('click', () => {
   if(tab.dataset.subtab === 'callouts' && currentOpId) renderOpCallouts(currentOpId);
   if(tab.dataset.subtab === 'log' && currentOpCache) renderOpsLog(currentOpCache);
   if(tab.dataset.subtab === 'chat' && currentOpId) loadOpChat();
+  if(tab.dataset.subtab === 'map' && liveMap) setTimeout(() => liveMap.invalidateSize(), 80);
 }));
 $('#opCalloutBtn') && $('#opCalloutBtn').addEventListener('click', () => {
   if(currentOpCache) openCalloutSheet({ id: currentOpCache.id, name: currentOpCache.name });
@@ -1335,6 +1336,9 @@ function renderOpDetail(op, operators){
   renderMapPins(operators);
   renderStacks(op);
   renderMapMarkers(op);
+  ensureLiveMap();
+  focusOpOnLiveMap(op);
+  rebuildLiveMarkers(op);
   renderCheckins(op);
   renderPlan(op);
   renderOpsLog(op);
@@ -1488,6 +1492,8 @@ async function checkIntoCurrentOp(){
       lat: geo.lat, lng: geo.lng
     }]);
     renderMapMarkers(currentOpCache);
+    rebuildLiveMarkers(currentOpCache);
+    if(liveMap) liveMap.setView([geo.lat, geo.lng], 18);
   }
   $('#mapHint').textContent = geo
     ? `${name} checked in with location. Drag the CI marker onto the map photo.`
@@ -1501,6 +1507,175 @@ const MAP_LOCATION_TYPES = [
   { type: 'staging', label: 'Staging' },
   { type: 'vehicle', label: 'Vehicle' },
 ];
+let liveMap = null;
+let liveLayer = null;
+let liveMapReady = false;
+
+function ensureLiveMap(){
+  const el = document.getElementById('mapLive');
+  if(!el || !window.L) return null;
+  if(liveMap){
+    setTimeout(() => liveMap.invalidateSize(), 80);
+    return liveMap;
+  }
+  liveMap = L.map(el, { zoomControl: true, attributionControl: true });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles © Esri'
+  }).addTo(liveMap);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19
+  }).addTo(liveMap);
+  liveMap.setView([36.208, -86.291], 17);
+  liveLayer = L.layerGroup().addTo(liveMap);
+  liveMap.on('click', onLiveMapClick);
+  liveMapReady = true;
+  return liveMap;
+}
+
+async function geocodeAddress(q){
+  if(!q) return null;
+  try {
+    const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
+      headers: { 'Accept': 'application/json' }
+    });
+    const data = await res.json();
+    if(data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch(e){ console.warn('geocode failed', e); }
+  return null;
+}
+
+async function focusOpOnLiveMap(op){
+  const map = ensureLiveMap();
+  if(!map) return;
+  const withGeo = []
+    .concat(op.checkins || [])
+    .concat(op.map_markers || [])
+    .concat(op.map_stacks || [])
+    .concat(currentOperatorsCache || [])
+    .filter(x => x && x.lat != null && x.lng != null);
+  if(withGeo.length){
+    map.setView([withGeo[0].lat, withGeo[0].lng], 18);
+    return;
+  }
+  const hit = await geocodeAddress(op.location || op.name || '');
+  if(hit) map.setView([hit.lat, hit.lng], 18);
+}
+
+function liveIcon(label, color){
+  return L.divIcon({
+    className: 'live-map-icon',
+    html: `<div style="background:#10120f;border:1.5px solid ${color||'#b59a4d'};color:${color||'#d4b86a'};padding:3px 6px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;transform:translate(-50%,-50%);">${label}</div>`,
+    iconSize: [0,0],
+    iconAnchor: [0,0]
+  });
+}
+
+function rebuildLiveMarkers(op){
+  const map = ensureLiveMap();
+  if(!map || !liveLayer) return;
+  liveLayer.clearLayers();
+  const editable = canEditOps();
+
+  (op.map_markers || []).forEach(mk => {
+    if(mk.lat == null || mk.lng == null) return;
+    const m = L.marker([mk.lat, mk.lng], {
+      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : '#d4b86a'),
+      draggable: editable,
+      rotationAngle: Number(mk.rot||0)
+    });
+    m.on('click', (e) => { L.DomEvent.stop(e); selectedMarkerId = sid(mk.id); selectedStackId = null; selectedPinMemberId = null; refreshRotateBar && refreshRotateBar(); });
+    m.on('dragend', async () => {
+      const p = m.getLatLng();
+      const next = (currentOpCache.map_markers||[]).map(x => sid(x.id)===sid(mk.id) ? { ...x, lat:p.lat, lng:p.lng } : x);
+      await saveMapMarkers(next);
+    });
+    m.addTo(liveLayer);
+  });
+
+  (op.map_stacks || []).forEach(st => {
+    if(st.lat == null || st.lng == null) return;
+    const m = L.marker([st.lat, st.lng], {
+      icon: liveIcon(st.name || 'Stack', '#d4b86a'),
+      draggable: editable
+    });
+    m.on('click', (e) => { L.DomEvent.stop(e); selectedStackId = sid(st.id); selectedMarkerId = null; selectedPinMemberId = null; renderStackEditor(); refreshRotateBar && refreshRotateBar(); });
+    m.on('dragend', async () => {
+      const p = m.getLatLng();
+      const next = (currentOpCache.map_stacks||[]).map(s => sameStack(s.id, st.id) ? { ...s, lat:p.lat, lng:p.lng } : s);
+      await saveMapStacks(next);
+    });
+    m.addTo(liveLayer);
+  });
+
+  (currentOperatorsCache || []).forEach(o => {
+    if(o.lat == null || o.lng == null) return;
+    const person = memberById(o.member_id);
+    const label = person ? person.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
+    const m = L.marker([o.lat, o.lng], {
+      icon: liveIcon((label + (o.role ? ' '+o.role : '')).trim(), '#facc15'),
+      draggable: editable
+    });
+    m.on('click', (e) => { L.DomEvent.stop(e); selectedPinMemberId = o.member_id; selectedStackId = null; selectedMarkerId = null; refreshRotateBar && refreshRotateBar(); });
+    m.on('dragend', async () => {
+      const p = m.getLatLng();
+      await supabaseClient.from('operation_operators').update({ lat:p.lat, lng:p.lng }).eq('operation_id', currentOpId).eq('member_id', o.member_id);
+      const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+      currentOperatorsCache = refreshed || [];
+    });
+    m.addTo(liveLayer);
+  });
+
+  (op.checkins || []).forEach(c => {
+    if(c.lat == null || c.lng == null) return;
+    L.marker([c.lat, c.lng], { icon: liveIcon((c.name||'CI').split(' ')[0] + ' CI', '#6b9a5f') })
+      .bindPopup(`${c.name||'Operator'}<br>${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}`)
+      .addTo(liveLayer);
+  });
+}
+
+async function onLiveMapClick(e){
+  if(!canEditOps() || !currentOpCache) return;
+  const lat = e.latlng.lat, lng = e.latlng.lng;
+
+  if(placingStack){
+    const stacks = Array.isArray(currentOpCache.map_stacks) ? currentOpCache.map_stacks : [];
+    const st = { id: sid((crypto.randomUUID && crypto.randomUUID()) || ('stk-'+Date.now())), name:'Entry Stack', lat, lng, x:50, y:50, members:[] };
+    await saveMapStacks([...stacks, st]);
+    placingStack = false;
+    selectedStackId = sid(st.id);
+    const nsBtn = $('#newStackBtn'); if(nsBtn) nsBtn.textContent = '+ Stack';
+    rebuildLiveMarkers(currentOpCache);
+    renderStacks(currentOpCache);
+    return;
+  }
+  if(placingMarkerType){
+    const meta = MAP_LOCATION_TYPES.find(t => t.type === placingMarkerType) || { type: placingMarkerType, label: placingMarkerType };
+    const markers = Array.isArray(currentOpCache.map_markers) ? currentOpCache.map_markers : [];
+    await saveMapMarkers([...markers, { id: sid((crypto.randomUUID && crypto.randomUUID()) || ('mk-'+Date.now())), type: meta.type, label: meta.label, lat, lng, x:50, y:50 }]);
+    placingMarkerType = null;
+    rebuildLiveMarkers(currentOpCache);
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+    return;
+  }
+  if(armedOperatorId){
+    const existing = (currentOperatorsCache||[]).find(o => o.member_id === armedOperatorId);
+    const roleBar = $('#opRoleBar');
+    const role = (roleBar && roleBar.dataset.pendingRole) ? roleBar.dataset.pendingRole : null;
+    if(existing){
+      await supabaseClient.from('operation_operators').update({ lat, lng, role: role || existing.role }).eq('operation_id', currentOpId).eq('member_id', armedOperatorId);
+    } else {
+      await supabaseClient.from('operation_operators').insert({ operation_id: currentOpId, member_id: armedOperatorId, lat, lng, x:50, y:50, role });
+    }
+    armedOperatorId = null;
+    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+    currentOperatorsCache = refreshed || [];
+    rebuildLiveMarkers(currentOpCache);
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+  }
+}
+
+
 
 async function saveMapMarkers(markers){
   const { error } = await supabaseClient.from('operations').update({ map_markers: markers }).eq('id', currentOpId);
