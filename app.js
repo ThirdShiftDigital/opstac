@@ -277,6 +277,55 @@ document.addEventListener('click', (e) => {
   })();
 });
 
+
+const VAPID_PUBLIC_KEY = 'BPlXIkiapZIvnJWTiWeajKwezI9OQNvqm_uwukZy57sGQ_VMM9VmdT0s2QUJ4G6QUJOdKz6IDOQuG-Em1OCPKEI';
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+async function subscribeAppleWebPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if(!sub){
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+  const json = sub.toJSON();
+  if(currentProfile && json && json.endpoint){
+    await supabaseClient.from('push_subscriptions').upsert({
+      agency_id: currentProfile.agency_id,
+      profile_id: currentProfile.id,
+      endpoint: json.endpoint,
+      p256dh: json.keys && json.keys.p256dh,
+      auth: json.keys && json.keys.auth
+    }, { onConflict: 'endpoint' });
+  }
+  return sub;
+}
+async function dispatchWebPush(title, body){
+  if(!currentProfile) return;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if(!session) return;
+  try {
+    await fetch('/.netlify/functions/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: session.access_token,
+        agencyId: currentProfile.agency_id,
+        title, body
+      })
+    });
+  } catch(e){ console.warn('send-push', e); }
+}
+
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => console.warn('sw', err));
 }
@@ -322,16 +371,23 @@ async function enableHighPriorityAlerts(){
     return false;
   }
   try {
+    await subscribeAppleWebPush();
+  } catch(e){
+    console.warn('subscribe', e);
+    if(isIos()){
+      alert('Allow Notifications, and open OpsTac from the Home Screen icon (iOS 16.4+).');
+    }
+  }
+  try {
     const reg = await navigator.serviceWorker.ready;
     await reg.showNotification('OpsTac', {
-      body: 'Callout alerts are on. Keep the app on the Home Screen.',
+      body: 'Web Push is on. Callouts can reach this iPhone when the app is closed.',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: 'opstac-test'
     });
   } catch(e){
     console.warn(e);
-    alert('Alerts were allowed, but iPhone did not show a test banner. Open OpsTac from the Home Screen icon, not the Safari tab.');
   }
   return true;
 }
@@ -352,10 +408,13 @@ function calloutModeLabel(mode){
   return mode === 'deploy' ? 'Deploy' : mode === 'standby' ? 'Standby Only' : mode === 'standdown' ? 'Stand Down' : 'Callout';
 }
 async function fireCalloutAlert({ title, body }){
+  const t = title || 'OpsTac Callout';
+  const b = body || 'New activation';
+  dispatchWebPush(t, b);
   if(Notification.permission !== 'granted') return;
   const payload = {
-    title: title || 'OpsTac Callout',
-    body: body || 'New activation',
+    title: t,
+    body: b,
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     requireInteraction: true,
