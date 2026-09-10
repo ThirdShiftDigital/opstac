@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0c0e0c">
+<meta name="theme-color" content="#080908">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="OpsTac">
@@ -17,24 +17,27 @@
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
   :root{
-    --bg: #0c0e0c;
-    --bg-panel: #14170f;
-    --bg-panel-raised: #1a1e15;
-    --line: #262b1f;
+    --bg: #080908;
+    --bg-panel: #10120f;
+    --bg-panel-raised: #161a14;
+    --bg-raised: #161a14;
+    --line: #22261f;
+    --line-bright: #2e3429;
     --steel: #8a8f94;
-    --steel-dim: #5c625f;
-    --olive: #a89968;
-    --olive-bright: #c7b482;
-    --text: #e8e6df;
-    --text-dim: #9aa19b;
+    --steel-dim: #5a605c;
+    --olive: #b59a4d;
+    --olive-bright: #d4b86a;
+    --olive-dim: rgba(181, 154, 77, 0.12);
+    --text: #e9e7e0;
+    --text-dim: #8f968f;
     --good: #6b9a5f;
     --good-bg: rgba(107,154,95,0.14);
     --warn: #c99a4a;
     --warn-bg: rgba(201,154,74,0.14);
     --bad: #b8564a;
     --bad-bg: rgba(184,86,74,0.16);
-    --radius: 10px;
-    --radius-sm: 7px;
+    --radius: 5px;
+    --radius-sm: 4px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -69,7 +72,7 @@
     display:flex; align-items:center; justify-content:space-between;
     border-bottom: 1px solid var(--line);
     position: sticky; top:0; z-index:20;
-    background: rgba(12,14,12,0.92); backdrop-filter: blur(10px);
+    background: rgba(8,9,8,0.92); backdrop-filter: blur(12px);
   }
   .brand-mark{ display:flex; align-items:center; gap:9px; }
   .brand-logo{ height:22px; width:auto; display:block; }
@@ -84,7 +87,7 @@
 
   /* ---- Page header inside content ---- */
   .page-head{ padding: 18px 18px 4px; }
-  .page-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:24px; letter-spacing:0.02em; text-transform:uppercase; }
+  .page-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:22px; letter-spacing:0.03em; text-transform:uppercase; }
   .page-sub{ font-size:12.5px; color:var(--text-dim); margin-top:2px; }
 
   /* ---- Content ---- */

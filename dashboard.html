@@ -10,14 +10,29 @@
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <style>
   :root{
-    --bg:#0c0e0c; --bg-panel:#14170f; --bg-raised:#1a1e15; --line:#262b1f;
-    --steel:#8a8f94; --steel-dim:#5c625f;
-    --olive:#a89968; --olive-bright:#c7b482;
-    --text:#e8e6df; --text-dim:#9aa19b;
-    --good:#6b9a5f; --good-bg:rgba(107,154,95,0.12);
-    --warn:#c99a4a; --warn-bg:rgba(201,154,74,0.12);
-    --bad:#b8564a; --bad-bg:rgba(184,86,74,0.14);
-    --radius:6px;
+    --bg: #080908;
+    --bg-panel: #10120f;
+    --bg-panel-raised: #161a14;
+    --bg-raised: #161a14;
+    --line: #22261f;
+    --line-bright: #2e3429;
+    --steel: #8a8f94;
+    --steel-dim: #5a605c;
+    --olive: #b59a4d;
+    --olive-bright: #d4b86a;
+    --olive-dim: rgba(181, 154, 77, 0.12);
+    --text: #e9e7e0;
+    --text-dim: #8f968f;
+    --good: #6b9a5f;
+    --good-bg: rgba(107,154,95,0.14);
+    --warn: #c99a4a;
+    --warn-bg: rgba(201,154,74,0.14);
+    --bad: #b8564a;
+    --bad-bg: rgba(184,86,74,0.16);
+    --radius: 5px;
+    --radius-sm: 4px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; -webkit-font-smoothing:antialiased; }
@@ -63,7 +78,7 @@
     border-left:2px solid transparent;
   }
   .nav-item:hover{ background:rgba(255,255,255,0.03); color:var(--text); }
-  .nav-item.active{ background:rgba(168,153,104,0.08); color:var(--olive-bright); border-left-color:var(--olive); }
+  .nav-item.active{ background:rgba(181,154,77,0.10); color:var(--olive-bright); border-left-color:var(--olive); }
   .nav-icon{ width:16px; height:16px; flex-shrink:0; opacity:0.85; }
   .sidebar-footer{ padding:14px 16px 16px; border-top:1px solid var(--line); }
   .user-chip{ font-size:12.5px; color:var(--text-dim); margin-bottom:8px; }
@@ -74,7 +89,7 @@
   .topbar{
     height:60px; border-bottom:1px solid var(--line); display:flex; align-items:center;
     justify-content:space-between; padding:0 28px; position:sticky; top:0;
-    background:rgba(12,14,12,0.85); backdrop-filter:blur(6px); z-index:5;
+    background:rgba(8,9,8,0.92); backdrop-filter:blur(12px); z-index:5;
   }
   .page-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; letter-spacing:0.03em; text-transform:uppercase; }
   .page-sub{ font-size:12px; color:var(--text-dim); margin-top:1px; }
