@@ -703,6 +703,7 @@ function openMemberSheet(existing){
   $('#mMemberRank').value = existing ? existing.rank||'' : '';
   $('#mMemberRole').value = existing ? existing.team_role||'' : '';
   if($('#mMemberUnit')) $('#mMemberUnit').value = existing ? (existing.unit_number||existing.unit||'') : '';
+  if($('#mMemberCallsign')) $('#mMemberCallsign').value = existing ? (existing.callsign||'') : '';
   $('#mMemberPhone').value = existing ? existing.phone||'' : '';
   $('#mMemberStatus').value = existing ? existing.status : 'ready';
   populateSubteamSelect(existing);
@@ -746,6 +747,7 @@ $('#mMemberSave').addEventListener('click', async () => {
     rank: $('#mMemberRank').value.trim() || null,
     team_role: $('#mMemberRole').value.trim() || null,
     unit_number: ($('#mMemberUnit') && $('#mMemberUnit').value.trim()) || null,
+    callsign: ($('#mMemberCallsign') && $('#mMemberCallsign').value.trim()) || null,
     subteam_id: $('#mMemberSubteam').value || null,
     phone: $('#mMemberPhone').value.trim() || null,
     status: $('#mMemberStatus').value,
@@ -1682,7 +1684,9 @@ async function focusOpOnLiveMap(op){
 
 function operatorUnitLabel(person){
   if(!person) return '?';
-  const raw = person.unit_number || person.unit || person.badge || person.callsign || '';
+  const cs = String(person.callsign||'').trim();
+  if(cs) return cs.length <= 6 ? cs : cs.slice(0,6);
+  const raw = person.unit_number || person.unit || person.badge || '';
   if(String(raw).trim()) return String(raw).trim().slice(0,4);
   const fromName = String(person.name||'').match(/(\d{1,4})/);
   if(fromName) return fromName[1];
@@ -1736,8 +1740,8 @@ function liveGlyph(shape, label){
       <path d="M16 28 C16 28 6 18 6 12 a10 10 0 1 1 20 0 C26 18 16 28 16 28z" fill="${g}"/></svg>`;
   }
   if(shape === 'person'){
-    const t = String(label||'?').slice(0,4);
-    const size = t.length > 2 ? 9 : 11;
+    const t = String(label||'?').slice(0,6);
+    const size = t.length > 4 ? 7 : t.length > 2 ? 9 : 11;
     return `<svg viewBox="0 0 32 32" width="28" height="28">
       <circle cx="16" cy="16" r="13" fill="#141814" stroke="${y}" stroke-width="2"/>
       <text x="16" y="20" text-anchor="middle" font-size="${size}" font-weight="800" fill="${y}" font-family="Inter,Rajdhani,sans-serif">${t}</text></svg>`;
