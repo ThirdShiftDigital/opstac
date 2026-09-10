@@ -278,38 +278,62 @@ document.addEventListener('click', (e) => {
 });
 
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('/sw.js').catch(err => console.warn('sw', err));
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => console.warn('sw', err));
+}
+
+function isIos(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function isStandaloneApp(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
 function syncPushBtn(){
   const btn = document.getElementById('enablePushBtn');
   if(!btn) return;
-  if(!('Notification' in window)){ btn.textContent = 'Unavailable'; btn.disabled = true; return; }
+  if(!('Notification' in window) || !('serviceWorker' in navigator)){
+    btn.textContent = 'Unavailable';
+    return;
+  }
+  if(isIos() && !isStandaloneApp()){
+    btn.textContent = 'Add to Home';
+    return;
+  }
   const perm = Notification.permission;
-  btn.disabled = false;
   btn.textContent = perm === 'granted' ? 'On' : perm === 'denied' ? 'Blocked' : 'Enable';
 }
 async function enableHighPriorityAlerts(){
+  if(isIos() && !isStandaloneApp()){
+    alert('On iPhone, open OpsTac from the Home Screen icon first.\n\nSafari → Share → Add to Home Screen.\nThen open that icon and tap Enable.');
+    return false;
+  }
   if(!('Notification' in window)){ alert('Notifications are not available on this device.'); return false; }
   if(Notification.permission === 'denied'){
-    alert('Notifications are blocked for this site. In Chrome: site settings → Notifications → Allow.');
+    alert(isIos()
+      ? 'Notifications are blocked. iPhone Settings → Notifications → OpsTac → Allow Notifications.'
+      : 'Notifications are blocked for this site.');
     syncPushBtn();
     return false;
   }
   const perm = await Notification.requestPermission();
   syncPushBtn();
-  if(perm === 'granted'){
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      if(reg) await reg.showNotification('OpsTac', {
-        body: 'Callout alerts are on.',
-        icon: '/icon-192.png',
-        tag: 'opstac-test',
-        requireInteraction: false
-      });
-    } catch(e){ console.warn(e); }
+  if(perm !== 'granted'){
+    alert('Permission was not granted.');
+    return false;
   }
-  return perm === 'granted';
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('OpsTac', {
+      body: 'Callout alerts are on. Keep the app on the Home Screen.',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: 'opstac-test'
+    });
+  } catch(e){
+    console.warn(e);
+    alert('Alerts were allowed, but iPhone did not show a test banner. Open OpsTac from the Home Screen icon, not the Safari tab.');
+  }
+  return true;
 }
 document.addEventListener('click', (e) => {
   if(e.target && (e.target.id === 'enablePushBtn' || e.target.closest('#enablePushBtn'))){
@@ -328,22 +352,24 @@ function calloutModeLabel(mode){
   return mode === 'deploy' ? 'Deploy' : mode === 'standby' ? 'Standby Only' : mode === 'standdown' ? 'Stand Down' : 'Callout';
 }
 async function fireCalloutAlert({ title, body }){
-  const payload = { type:'CALLOUT', title: title || 'OpsTac Callout', body: body || 'New activation', url:'/app.html', tag:'opstac-callout' };
-  if(navigator.serviceWorker && navigator.serviceWorker.controller){
-    navigator.serviceWorker.controller.postMessage(payload);
+  if(Notification.permission !== 'granted') return;
+  const payload = {
+    title: title || 'OpsTac Callout',
+    body: body || 'New activation',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    requireInteraction: true,
+    renotify: true,
+    silent: false,
+    tag: 'opstac-callout',
+    data: { url: '/app.html' }
+  };
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(payload.title, payload);
     return;
-  }
-  const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
-  if(reg && Notification.permission === 'granted'){
-    return reg.showNotification(payload.title, {
-      body: payload.body, icon:'/icon-192.png', badge:'/icon-192.png',
-      requireInteraction:true, renotify:true, silent:false,
-      vibrate:[300,100,300], tag:'opstac-callout'
-    });
-  }
-  if(Notification.permission === 'granted'){
-    new Notification(payload.title, { body: payload.body, requireInteraction:true });
-  }
+  } catch(e){ console.warn('sw notify', e); }
+  try { new Notification(payload.title, payload); } catch(e2){ console.warn('notify', e2); }
 }
 
 function listenForCalloutAlerts(){
