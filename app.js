@@ -281,13 +281,44 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(err => console.warn('sw', err));
 }
 
+function syncPushBtn(){
+  const btn = document.getElementById('enablePushBtn');
+  if(!btn) return;
+  if(!('Notification' in window)){ btn.textContent = 'Unavailable'; btn.disabled = true; return; }
+  const perm = Notification.permission;
+  btn.disabled = false;
+  btn.textContent = perm === 'granted' ? 'On' : perm === 'denied' ? 'Blocked' : 'Enable';
+}
 async function enableHighPriorityAlerts(){
   if(!('Notification' in window)){ alert('Notifications are not available on this device.'); return false; }
+  if(Notification.permission === 'denied'){
+    alert('Notifications are blocked for this site. In Chrome: site settings → Notifications → Allow.');
+    syncPushBtn();
+    return false;
+  }
   const perm = await Notification.requestPermission();
-  const btn = document.getElementById('enablePushBtn');
-  if(btn) btn.textContent = perm === 'granted' ? 'On' : 'Enable';
+  syncPushBtn();
+  if(perm === 'granted'){
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if(reg) await reg.showNotification('OpsTac', {
+        body: 'Callout alerts are on.',
+        icon: '/icon-192.png',
+        tag: 'opstac-test',
+        requireInteraction: false
+      });
+    } catch(e){ console.warn(e); }
+  }
   return perm === 'granted';
 }
+document.addEventListener('click', (e) => {
+  if(e.target && (e.target.id === 'enablePushBtn' || e.target.closest('#enablePushBtn'))){
+    e.preventDefault();
+    enableHighPriorityAlerts();
+  }
+});
+document.addEventListener('DOMContentLoaded', syncPushBtn);
+
 
 async function fireCalloutAlert({ title, body }){
   const payload = { type:'CALLOUT', title: title || 'OpsTac Callout', body: body || 'New activation', url:'/app.html', tag:'opstac-callout' };
@@ -363,6 +394,7 @@ async function onSignedIn(){
   renderPermissionsSettings();
   loadPendingJoinRequests();
   listenForCalloutAlerts();
+  syncPushBtn();
   goToSection('overview');
 }
 
