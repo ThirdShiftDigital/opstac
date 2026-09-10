@@ -1678,50 +1678,64 @@ async function focusOpOnLiveMap(op){
 }
 
 function liveGlyph(shape){
-  const stroke = '#0c0e0c';
-  if(shape === 'vehicle'){
-    return `<svg viewBox="0 0 64 32" width="42" height="22"><rect x="6" y="10" width="40" height="12" rx="2" fill="#1f2a22" stroke="#c7b482" stroke-width="2"/><rect x="28" y="4" width="16" height="8" rx="1" fill="#2a3328" stroke="#c7b482" stroke-width="1.5"/><circle cx="16" cy="24" r="4" fill="#111" stroke="#d4b86a"/><circle cx="42" cy="24" r="4" fill="#111" stroke="#d4b86a"/><rect x="8" y="12" width="6" height="4" fill="#7ec8e3"/></svg>`;
-  }
+  const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a';
   if(shape === 'ems' || shape === 'medic'){
-    return `<svg viewBox="0 0 64 36" width="44" height="25">
-      <rect x="2" y="14" width="46" height="13" rx="2.5" fill="#f4f6f8" stroke="#2a2f33" stroke-width="1.6"/>
-      <path d="M48 18 h8 l5 6 v3 h-13 z" fill="#f4f6f8" stroke="#2a2f33" stroke-width="1.6"/>
-      <rect x="6" y="17" width="12" height="7" rx="1" fill="#9fd4e8"/>
-      <rect x="22" y="16.5" width="11" height="8" rx="1" fill="#d9dee3"/>
-      <circle cx="16" cy="29" r="4.2" fill="#1a1c1e" stroke="#c7ccd1" stroke-width="1.2"/>
-      <circle cx="16" cy="29" r="1.6" fill="#6b7075"/>
-      <circle cx="42" cy="29" r="4.2" fill="#1a1c1e" stroke="#c7ccd1" stroke-width="1.2"/>
-      <circle cx="42" cy="29" r="1.6" fill="#6b7075"/>
-      <rect x="28" y="8" width="14" height="8" rx="1" fill="#c1121f"/>
-      <rect x="33.2" y="9.2" width="3.6" height="5.6" fill="#fff"/>
-      <rect x="31.2" y="11.2" width="7.6" height="1.8" fill="#fff"/>
-    </svg>`;
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <rect x="2" y="2" width="28" height="28" rx="3" fill="#1a1212" stroke="${r}" stroke-width="2"/>
+      <rect x="14" y="8" width="4" height="16" fill="${r}"/>
+      <rect x="8" y="14" width="16" height="4" fill="${r}"/></svg>`;
+  }
+  if(shape === 'vehicle'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/>
+      <path d="M8 20 h16 l-3-8 h-10 z" fill="none" stroke="${a}" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="12" cy="21" r="1.6" fill="${a}"/><circle cx="20" cy="21" r="1.6" fill="${a}"/></svg>`;
   }
   if(shape === 'lz'){
-    return `<svg viewBox="0 0 32 32" width="30" height="30"><circle cx="16" cy="16" r="14" fill="#0b3a4a" stroke="#7ec8e3" stroke-width="2"/><text x="16" y="21" text-anchor="middle" font-size="14" font-weight="800" fill="#7ec8e3" font-family="Inter,sans-serif">H</text></svg>`;
-  }
-  if(shape === 'rally'){
-    return `<svg viewBox="0 0 24 28" width="22" height="26"><path d="M4 2v24" stroke="#d4b86a" stroke-width="2"/><path d="M6 3h14l-4 6 4 6H6z" fill="#d4b86a"/></svg>`;
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <circle cx="16" cy="16" r="13" fill="#0c1a1e" stroke="${b}" stroke-width="2"/>
+      <path d="M11 9 v14 M21 9 v14 M11 16 h10" stroke="${b}" stroke-width="2.4" fill="none" stroke-linecap="square"/></svg>`;
   }
   if(shape === 'command'){
-    return `<svg viewBox="0 0 32 28" width="30" height="26"><path d="M4 12 L16 4 L28 12 V24 H4Z" fill="#1a1e18" stroke="#d4b86a" stroke-width="2"/><rect x="13" y="16" width="6" height="8" fill="#d4b86a"/></svg>`;
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/>
+      <path d="M16 7 v18 M16 7 l10 6 v5" fill="none" stroke="${a}" stroke-width="2"/>
+      <circle cx="16" cy="7" r="2" fill="${a}"/></svg>`;
+  }
+  if(shape === 'rally'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/>
+      <path d="M11 24 V8 h12 l-3 4 3 4 H11" fill="${a}"/></svg>`;
   }
   if(shape === 'staging'){
-    return `<svg viewBox="0 0 28 28" width="26" height="26"><rect x="4" y="10" width="20" height="12" fill="#1a1e18" stroke="#d4b86a" stroke-width="2"/><path d="M4 10 L14 4 L24 10" fill="#2a3328" stroke="#d4b86a" stroke-width="2"/></svg>`;
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/>
+      <rect x="8" y="8" width="16" height="16" fill="none" stroke="${a}" stroke-width="2" stroke-dasharray="3 2"/></svg>`;
   }
   if(shape === 'stack' || shape === 'entry'){
-    return `<svg viewBox="0 0 28 28" width="26" height="26"><circle cx="14" cy="7" r="4" fill="#facc15"/><circle cx="8" cy="16" r="4" fill="#eab308"/><circle cx="20" cy="16" r="4" fill="#eab308"/><circle cx="14" cy="24" r="3.5" fill="#ca8a04"/></svg>`;
+    return `<svg viewBox="0 0 32 32" width="28" height="28">
+      <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${y}" stroke-width="2"/>
+      <circle cx="16" cy="9" r="2.4" fill="${y}"/>
+      <circle cx="16" cy="16" r="2.4" fill="${y}"/>
+      <circle cx="16" cy="23" r="2.4" fill="${y}"/></svg>`;
   }
   if(shape === 'checkin'){
-    return `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 22s8-7 8-13a8 8 0 1 0-16 0c0 6 8 13 8 13z" fill="#6b9a5f"/></svg>`;
+    return `<svg viewBox="0 0 32 32" width="22" height="22">
+      <path d="M16 28 C16 28 6 18 6 12 a10 10 0 1 1 20 0 C26 18 16 28 16 28z" fill="${g}"/></svg>`;
   }
-  return `<svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="9" fill="#facc15"/></svg>`;
+  if(shape === 'person'){
+    return `<svg viewBox="0 0 32 32" width="24" height="24">
+      <circle cx="16" cy="16" r="13" fill="#141814" stroke="${y}" stroke-width="2"/>
+      <circle cx="16" cy="12" r="3.2" fill="${y}"/>
+      <path d="M9 24c1.5-5 12.5-5 14 0" fill="${y}"/></svg>`;
+  }
+  return `<svg viewBox="0 0 32 32" width="24" height="24"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/></svg>`;
 }
 function liveIcon(label, color, rot, shape){
   const deg = Number(rot||0);
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg); filter:drop-shadow(0 1px 2px #000);">${liveGlyph(shape)}</div>`,
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape)}</div>`,
     iconSize: [0,0],
     iconAnchor: [0,0]
   });
