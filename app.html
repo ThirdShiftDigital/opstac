@@ -603,6 +603,28 @@
   }
 
   /* ---- Ops Log ---- */
+  .op-role-bar-label{
+    width: 100%; font-size: 11px; color: var(--text-dim); margin-bottom: 2px;
+    font-weight: 600; letter-spacing: 0.02em;
+  }
+  .op-chip.selected-chip .mini-avatar{
+    outline: 2px solid var(--olive-bright);
+  }
+  .ops-log-entry-actions{
+    display: flex; gap: 8px; margin-left: auto;
+  }
+  .ops-log-edit, .ops-log-del{
+    background: none; border: none; color: var(--text-dim);
+    font-size: 11px; font-weight: 600; cursor: pointer; padding: 0 2px;
+  }
+  .ops-log-edit:hover{ color: var(--olive-bright); }
+  .ops-log-del:hover{ color: var(--bad); }
+  .ops-log-edit-area{
+    width: 100%; min-height: 56px; resize: vertical;
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm);
+    color: var(--text); font-family: Inter, sans-serif; font-size: 13.5px; padding: 8px 10px;
+  }
+
   .ops-quick-row{
     display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;
   }
@@ -827,7 +849,8 @@
         </div>
 
         <div class="subpanel active" id="opPanel-map">
-          <div class="map-hint" id="mapHint">Tap a team member below, then tap the map to place them.</div>
+          <div class="map-hint" id="mapHint">Tap a team member below, choose a role, then tap the map to place them.</div>
+          <div class="op-role-bar" id="opRoleBar" style="display:none;"></div>
           <div class="op-palette" id="opPalette"></div>
           <input type="file" accept="image/*" id="mapImageInput" style="display:none">
           <div class="map-canvas" id="mapCanvas">

@@ -1125,79 +1125,79 @@ const OP_ASSIGNMENT_ROLES = [
 
 function renderMapPalette(op, operators){
   const editable = canEditOps();
+  const focusId = armedOperatorId || selectedPinMemberId;
+
   $('#opPalette').innerHTML = allPersonnel.map(p => {
     const placed = operators.find(o => o.member_id === p.id);
     const role = placed && placed.role ? placed.role : '';
-    return `<div class="op-chip ${armedOperatorId===p.id?'armed':''} ${placed?'placed':''}" data-member-id="${p.id}">
-      <div class="mini-avatar" style="${placed?'box-shadow:0 0 0 2px var(--olive);':''}">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
+    const isFocus = focusId === p.id;
+    return `<div class="op-chip ${armedOperatorId===p.id?'armed':''} ${selectedPinMemberId===p.id?'selected-chip':''} ${placed?'placed':''}" data-member-id="${p.id}">
+      <div class="mini-avatar" style="${placed?'box-shadow:0 0 0 2px var(--olive);':''}${isFocus?' outline:2px solid var(--olive-bright);':''}">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
       <div class="op-chip-label">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
       ${role ? `<div class="op-chip-role">${role}</div>` : ''}
     </div>`;
   }).join('');
 
-  // Role selector under palette when someone is armed
-  let roleBar = $('#opRoleBar');
-  if(!roleBar){
-    roleBar = document.createElement('div');
-    roleBar.id = 'opRoleBar';
-    roleBar.className = 'op-role-bar';
-    const palette = $('#opPalette');
-    if(palette && palette.parentNode) palette.parentNode.insertBefore(roleBar, palette.nextSibling);
-  }
+  const roleBar = $('#opRoleBar');
+  if(roleBar){
+    if(editable && focusId){
+      const existing = operators.find(o => o.member_id === focusId);
+      const currentRole = (existing && existing.role) || (roleBar.dataset.pendingRole || '');
+      const who = memberById(focusId);
+      roleBar.style.display = 'flex';
+      roleBar.innerHTML = `<div class="op-role-bar-label">${who ? who.name.split(' ')[0] : 'Operator'} — assignment</div>` +
+        OP_ASSIGNMENT_ROLES.map(r =>
+          `<button type="button" class="op-role-chip ${currentRole===r?'active':''}" data-role="${r}">${r}</button>`
+        ).join('') +
+        `<button type="button" class="op-role-chip ${!currentRole?'active':''}" data-role="">No role</button>`;
 
-  if(editable && armedOperatorId){
-    const existing = operators.find(o => o.member_id === armedOperatorId);
-    const currentRole = (existing && existing.role) || '';
-    roleBar.style.display = 'flex';
-    roleBar.innerHTML = OP_ASSIGNMENT_ROLES.map(r =>
-      `<button type="button" class="op-role-chip ${currentRole===r?'active':''}" data-role="${r}">${r}</button>`
-    ).join('') + `<button type="button" class="op-role-chip ${!currentRole?'active':''}" data-role="">No role</button>`;
-    $$('#opRoleBar .op-role-chip').forEach(chip => {
-      chip.addEventListener('click', async () => {
-        const role = chip.dataset.role || null;
-        const placed = operators.find(o => o.member_id === armedOperatorId);
-        if(placed){
-          await supabaseClient.from('operation_operators').update({ role }).eq('operation_id', currentOpId).eq('member_id', armedOperatorId);
-          const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
-          currentOperatorsCache = refreshed || [];
-          renderMapPins(currentOperatorsCache);
-          renderMapPalette(currentOpCache, currentOperatorsCache);
-        } else {
-          // Store pending role on the chip selection via dataset for next place
-          roleBar.dataset.pendingRole = role || '';
-          $$('#opRoleBar .op-role-chip').forEach(c => c.classList.toggle('active', (c.dataset.role||'') === (role||'')));
-        }
+      $$('#opRoleBar .op-role-chip').forEach(chip => {
+        chip.addEventListener('click', async () => {
+          const role = chip.dataset.role || null;
+          const placed = operators.find(o => o.member_id === focusId);
+          if(placed){
+            const { error } = await supabaseClient.from('operation_operators').update({ role }).eq('operation_id', currentOpId).eq('member_id', focusId);
+            if(error) console.warn('role update failed', error);
+            const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+            currentOperatorsCache = refreshed || [];
+            renderMapPins(currentOperatorsCache);
+            renderMapPalette(currentOpCache, currentOperatorsCache);
+          } else {
+            roleBar.dataset.pendingRole = role || '';
+            $$('#opRoleBar .op-role-chip').forEach(c => c.classList.toggle('active', (c.dataset.role||'') === (role||'')));
+          }
+        });
       });
-    });
-    if(!roleBar.dataset.pendingRole) roleBar.dataset.pendingRole = currentRole || '';
-  } else {
-    roleBar.style.display = 'none';
-    roleBar.innerHTML = '';
-    roleBar.dataset.pendingRole = '';
+    } else {
+      roleBar.style.display = 'none';
+      roleBar.innerHTML = '';
+      if(!armedOperatorId) roleBar.dataset.pendingRole = '';
+    }
   }
 
   if(!editable) return;
   $$('.op-chip').forEach(chip => chip.addEventListener('click', () => {
     const id = chip.dataset.memberId;
-    // If already placed and we tap chip, select that pin for move/remove
     const placed = operators.find(o => o.member_id === id);
     if(placed){
       selectedPinMemberId = selectedPinMemberId === id ? null : id;
       armedOperatorId = null;
-      renderMapPalette(op, operators);
-      renderMapPins(operators);
+      renderMapPalette(op, currentOperatorsCache);
+      renderMapPins(currentOperatorsCache);
       $('#mapHint').textContent = selectedPinMemberId
-        ? `Selected ${memberById(id).name}. Tap map to move, or tap Remove on the pin.`
-        : 'Tap a team member below, then tap the map to place them.';
+        ? `Selected ${memberById(id).name}. Change role above, tap map to move, or × to remove.`
+        : 'Tap a team member, choose a role, then tap the map.';
       return;
     }
     selectedPinMemberId = null;
     armedOperatorId = armedOperatorId === id ? null : id;
+    const rb = $('#opRoleBar');
+    if(rb) rb.dataset.pendingRole = '';
     renderMapPalette(op, operators);
     renderMapPins(operators);
     $('#mapHint').textContent = armedOperatorId
-      ? `Place ${memberById(armedOperatorId).name} — choose a role below, then tap the map.`
-      : 'Tap a team member below, then tap the map to place them.';
+      ? `Place ${memberById(armedOperatorId).name} — choose role above, then tap the map.`
+      : 'Tap a team member, choose a role, then tap the map.';
   }));
 }
 
@@ -1597,14 +1597,19 @@ function renderOpsLog(op){
     : `<div class="ops-log-list">${log.map(e => {
         const t = new Date(e.ts);
         const timeStr = isNaN(t) ? '' : t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-        return `<div class="ops-log-entry ${e.critical ? 'critical' : ''}">
+        const actions = editable ? `<div class="ops-log-entry-actions">
+            <button type="button" class="ops-log-edit" data-id="${e.id}">Edit</button>
+            <button type="button" class="ops-log-del" data-id="${e.id}">Delete</button>
+          </div>` : '';
+        return `<div class="ops-log-entry ${e.critical ? 'critical' : ''}" data-entry-id="${e.id}">
           <div class="ops-log-meta">
             <span class="ops-log-time">${timeStr}</span>
             <span class="ops-log-tag-label">${e.tag || 'Note'}</span>
             ${e.critical ? '<span style="color:var(--olive-bright); font-size:12px;">★</span>' : ''}
             <span class="ops-log-author">${e.author || ''}</span>
+            ${actions}
           </div>
-          <div class="ops-log-text">${escapeHtml(e.text || '')}</div>
+          <div class="ops-log-text" data-text-for="${e.id}">${escapeHtml(e.text || '')}</div>
         </div>`;
       }).join('')}</div>`;
 
@@ -1750,6 +1755,39 @@ function renderOpsLog(op){
     $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
     $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
   });
+
+  // Edit / delete existing log entries
+  if(editable){
+    $$('.ops-log-del').forEach(btn => btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      if(!confirm('Delete this log entry?')) return;
+      const newLog = (currentOpCache.ops_log || []).filter(e => e.id !== id);
+      await saveOpsLog(newLog);
+      renderOpsLog(currentOpCache);
+    }));
+    $$('.ops-log-edit').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const entry = (currentOpCache.ops_log || []).find(e => e.id === id);
+      if(!entry) return;
+      const textEl = document.querySelector(`[data-text-for="${id}"]`);
+      if(!textEl || textEl.querySelector('textarea')) return;
+      const original = entry.text || '';
+      textEl.innerHTML = `<textarea class="ops-log-edit-area">${original.replace(/</g,'&lt;')}</textarea>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" class="btn btn-primary ops-log-save-edit" data-id="${id}" style="font-size:12px; padding:6px 12px;">Save</button>
+          <button type="button" class="btn btn-outline ops-log-cancel-edit" data-id="${id}" style="font-size:12px; padding:6px 12px;">Cancel</button>
+        </div>`;
+      const ta = textEl.querySelector('textarea');
+      if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      textEl.querySelector('.ops-log-save-edit').addEventListener('click', async () => {
+        const newText = (textEl.querySelector('textarea').value || '').trim();
+        const newLog = (currentOpCache.ops_log || []).map(e => e.id === id ? { ...e, text: newText } : e);
+        await saveOpsLog(newLog);
+        renderOpsLog(currentOpCache);
+      });
+      textEl.querySelector('.ops-log-cancel-edit').addEventListener('click', () => renderOpsLog(currentOpCache));
+    }));
+  }
 
   $('#logReopenBtn') && $('#logReopenBtn').addEventListener('click', async () => {
     if(!confirm('Reopen this operation? It will return to Active status so you can continue logging.')) return;
