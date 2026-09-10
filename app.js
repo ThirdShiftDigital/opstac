@@ -1742,29 +1742,8 @@ function renderPlan(op){
       $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-log'));
     });
     const completeBtn = $('#completeOpBtn');
-    if(completeBtn) completeBtn.addEventListener('click', async () => {
-      // Build timeline from ops log if empty
-      const log = currentOpCache.ops_log || [];
-      let debrief = currentOpCache.debrief || {};
-      if(!debrief.timeline && log.length){
-        debrief = {
-          ...debrief,
-          timeline: log.slice().reverse().map(e => {
-            const t = new Date(e.ts);
-            const time = t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            return `[${time}] ${e.tag}${e.critical?' ★':''}: ${e.text}`;
-          }).join('\n')
-        };
-      }
-      await supabaseClient.from('operations').update({ status:'complete', debrief }).eq('id', currentOpId);
-      currentOpCache.status = 'complete';
-      currentOpCache.debrief = debrief;
-      renderPlan(currentOpCache);
-      renderOpsLog(currentOpCache);
-      renderDebrief(currentOpCache);
-      $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
-      $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
-    });
+    if(completeBtn) completeBtn.addEventListener('click', completeCurrentOperation);
+
   }
 }
 
@@ -2043,28 +2022,7 @@ function renderOpsLog(op){
     renderOpsLog(currentOpCache);
   });
 
-  $('#logCompleteBtn') && $('#logCompleteBtn').addEventListener('click', async () => {
-    const log = currentOpCache.ops_log || [];
-    let debrief = currentOpCache.debrief || {};
-    if(!debrief.timeline && log.length){
-      debrief = {
-        ...debrief,
-        timeline: log.slice().reverse().map(e => {
-          const t = new Date(e.ts);
-          const time = t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-          return `[${time}] ${e.tag}${e.critical?' ★':''}: ${e.text}`;
-        }).join('\\n')
-      };
-    }
-    await supabaseClient.from('operations').update({ status:'complete', debrief }).eq('id', currentOpId);
-    currentOpCache.status = 'complete';
-    currentOpCache.debrief = debrief;
-    renderPlan(currentOpCache);
-    renderOpsLog(currentOpCache);
-    renderDebrief(currentOpCache);
-    $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
-    $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
-  });
+  $('#logCompleteBtn') && $('#logCompleteBtn').addEventListener('click', completeCurrentOperation);
 
   // Edit / delete existing log entries
   if(editable){
@@ -2117,6 +2075,40 @@ function escapeHtml(str){
     .replace(/"/g, '&quot;');
 }
 
+
+function buildTimelineFromLog(log){
+  const entries = Array.isArray(log) ? [...log] : [];
+  entries.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  return entries.map(e => {
+    const t = new Date(e.ts);
+    const time = isNaN(t) ? '' : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const star = e.critical ? ' ★' : '';
+    return `[${time}] ${e.tag || 'Note'}${star}: ${e.text || ''}`.trim();
+  }).join('\n');
+}
+
+async function completeCurrentOperation(){
+  const log = currentOpCache.ops_log || [];
+  let debrief = { ...(currentOpCache.debrief || {}) };
+  const fromLog = buildTimelineFromLog(log);
+  if(fromLog){
+    // Always refresh timeline from the live log so post-ops matches what was captured
+    debrief.timeline = fromLog;
+  }
+  const { error } = await supabaseClient.from('operations').update({ status: 'complete', debrief }).eq('id', currentOpId);
+  if(error){
+    alert('Could not complete operation: ' + error.message);
+    return;
+  }
+  currentOpCache.status = 'complete';
+  currentOpCache.debrief = debrief;
+  renderPlan(currentOpCache);
+  renderOpsLog(currentOpCache);
+  renderDebrief(currentOpCache);
+  $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab === 'debrief'));
+  $$('.subpanel').forEach(p => p.classList.toggle('active', p.id === 'opPanel-debrief'));
+}
+
 const DEBRIEF_FIELDS = [
   { key:'outcome', label:'Outcome' }, { key:'timeline', label:'Timeline' }, { key:'injuries', label:'Injuries' },
   { key:'equipmentIssues', label:'Equipment Issues' }, { key:'lessonsLearned', label:'Lessons Learned' }, { key:'narrative', label:'Narrative Summary' },
@@ -2127,7 +2119,12 @@ function renderDebrief(op){
     return;
   }
   const editable = canEditOps();
-  const debrief = op.debrief || {};
+  const debrief = { ...(op.debrief || {}) };
+  const fromLog = buildTimelineFromLog(op.ops_log || []);
+  if(fromLog){
+    const broken = !debrief.timeline || debrief.timeline.indexOf('\n') === -1;
+    if(broken) debrief.timeline = fromLog;
+  }
   const fieldsHtml = DEBRIEF_FIELDS.map(f => `
     <div class="field-group"><label class="field-label">${f.label}</label>
       ${editable ? `<textarea class="field-textarea" data-debrief-field="${f.key}" placeholder="Not yet filled in...">${debrief[f.key]||''}</textarea>`
