@@ -1191,6 +1191,9 @@ $('#opDeleteBtn').addEventListener('click', async () => {
 let selectedPinMemberId = null; // pin selected for move/remove
 let selectedStackId = null;
 let placingStack = false;
+function sid(id){ return id == null ? '' : String(id); }
+function sameStack(a, b){ return sid(a) && sid(a) === sid(b); }
+
 
 const OP_ASSIGNMENT_ROLES = [
   'Entry', 'Perimeter', 'Overwatch', 'Breach', 'Cover',
@@ -1256,6 +1259,8 @@ function renderMapPalette(op, operators){
     if(placed){
       selectedPinMemberId = selectedPinMemberId === id ? null : id;
       armedOperatorId = null;
+      selectedStackId = null;
+      placingStack = false;
       renderMapPalette(op, currentOperatorsCache);
       renderMapPins(currentOperatorsCache);
       $('#mapHint').textContent = selectedPinMemberId
@@ -1365,6 +1370,8 @@ function renderMapPins(operators){
       // Select pin for move/remove
       selectedPinMemberId = selectedPinMemberId === o.member_id ? null : o.member_id;
       armedOperatorId = null;
+      selectedStackId = null;
+      placingStack = false;
       renderMapPins(operators);
       renderMapPalette(currentOpCache, operators);
       $('#mapHint').textContent = selectedPinMemberId
@@ -1385,9 +1392,11 @@ document.addEventListener('click', (e) => {
   selectedStackId = null;
   selectedPinMemberId = null;
   armedOperatorId = null;
+  const ns = $('#newStackBtn');
+  if(ns) ns.textContent = 'Tap map to place';
   renderMapPalette(currentOpCache, currentOperatorsCache);
   renderStacks(currentOpCache);
-  $('#mapHint').textContent = 'Tap the map to place the stack (entry point, door, etc.).';
+  $('#mapHint').textContent = 'Tap an empty spot on the map to place a new stack.';
 });
 
 if(!window._mapClickBound){
@@ -1405,15 +1414,17 @@ if(!window._mapClickBound){
     if(placingStack){
       const stacks = Array.isArray(currentOpCache.map_stacks) ? currentOpCache.map_stacks : [];
       const st = {
-        id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()),
+        id: sid((crypto.randomUUID && crypto.randomUUID()) || ('stk-' + Date.now())),
         name: 'Entry Stack',
         x: clampedX, y: clampedY,
         members: []
       };
       await saveMapStacks([...stacks, st]);
       placingStack = false;
-      selectedStackId = st.id;
+      selectedStackId = sid(st.id);
       renderStacks(currentOpCache);
+      const nsBtn = $('#newStackBtn');
+      if(nsBtn) nsBtn.textContent = '+ New Stack';
       $('#mapHint').textContent = 'Stack placed. Add operators in order below.';
       return;
     }
@@ -1421,7 +1432,7 @@ if(!window._mapClickBound){
     // Move selected stack
     if(selectedStackId){
       const stacks = (currentOpCache.map_stacks || []).map(s =>
-        s.id === selectedStackId ? { ...s, x: clampedX, y: clampedY } : s
+        sameStack(s.id, selectedStackId) ? { ...s, x: clampedX, y: clampedY } : s
       );
       await saveMapStacks(stacks);
       renderStacks(currentOpCache);
@@ -1497,7 +1508,7 @@ function renderStacks(op){
   if(palette){
     palette.innerHTML = stacks.map(st => {
       const count = (st.members || []).length;
-      return `<div class="stack-chip ${selectedStackId===st.id?'selected':''}" data-stack-id="${st.id}">
+      return `<div class="stack-chip ${sameStack(selectedStackId, st.id)?'selected':''}" data-stack-id="${sid(st.id)}">
         <div class="stack-chip-name">${st.name || 'Stack'}</div>
         <div class="stack-chip-meta">${count} operator${count===1?'':'s'} · tap to select</div>
       </div>`;
@@ -1506,8 +1517,8 @@ function renderStacks(op){
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
         if(!editable) return;
-        const id = chip.dataset.stackId;
-        selectedStackId = selectedStackId === id ? null : id;
+        const id = sid(chip.dataset.stackId);
+        selectedStackId = sameStack(selectedStackId, id) ? null : id;
         selectedPinMemberId = null;
         armedOperatorId = null;
         placingStack = false;
@@ -1522,7 +1533,7 @@ function renderStacks(op){
 
   stacks.forEach(st => {
     const pin = document.createElement('div');
-    pin.className = 'map-stack-pin' + (selectedStackId === st.id ? ' selected' : '');
+    pin.className = 'map-stack-pin' + (sameStack(selectedStackId, st.id) ? ' selected' : '');
     pin.style.left = st.x + '%';
     pin.style.top = st.y + '%';
     const names = (st.members || []).map(m => {
@@ -1535,10 +1546,10 @@ function renderStacks(op){
     pin.addEventListener('click', (e) => {
       e.stopPropagation();
       if(!editable) return;
-      selectedStackId = selectedStackId === st.id ? null : st.id;
+      if(placingStack) return; // don't steal New Stack placement
+      selectedStackId = sameStack(selectedStackId, st.id) ? null : sid(st.id);
       selectedPinMemberId = null;
       armedOperatorId = null;
-      placingStack = false;
       renderStacks(currentOpCache);
       renderStackEditor();
       renderMapPalette(currentOpCache, currentOperatorsCache);
