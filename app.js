@@ -2818,11 +2818,28 @@ function presOpts(){
   document.querySelectorAll('.pres-opt').forEach(cb => { o[cb.dataset.opt] = cb.checked; });
   return o;
 }
+function normalizePlan(plan){
+  if(!plan) return {};
+  if(typeof plan === 'string'){
+    try { return JSON.parse(plan) || {}; } catch(e){ return {}; }
+  }
+  return plan;
+}
+function planFieldText(plan, key){
+  const v = plan && plan[key];
+  if(v == null) return '';
+  return String(v).trim();
+}
 async function generateOpPresentation(op){
   const btn = $('#opPresentBtn');
   if(btn){ btn.style.pointerEvents = 'none'; btn.style.opacity = '0.5'; }
   const opt = presOpts();
   try {
+    if(op && op.id){
+      const { data: fresh } = await supabaseClient.from('operations').select('*').eq('id', op.id).single();
+      if(fresh) op = { ...op, ...fresh };
+    }
+    op.plan = normalizePlan(op.plan);
     const pres = new window.PptxGenJS();
     pres.layout = 'LAYOUT_WIDE';
     pres.layout = 'LAYOUT_16x9';
@@ -2859,7 +2876,8 @@ async function generateOpPresentation(op){
       slide.background = { color: '0c0e0c' };
       slide.addText('Map', { x: MARGIN, y: 0.2, fontSize: 22, bold: true, color: 'c7b482' });
       if(mapData){
-        slide.addImage({ data: mapData, x: 0.4, y: 0.7, w: 9.2, h: 4.5 });
+        try { slide.addImage({ data: mapData, x: 0.4, y: 0.7, w: 9.2, h: 4.5 }); }
+        catch(imgErr){ slide.addText('Map image could not be embedded.', { x: MARGIN, y: 2.4, fontSize: 14, color: 'a89968' }); }
       } else {
         slide.addText('No map image uploaded.', { x: MARGIN, y: 2.4, fontSize: 16, color: 'a89968' });
       }
@@ -2892,12 +2910,34 @@ async function generateOpPresentation(op){
     }
 
     if(opt.plan !== false){
-      PLAN_FIELDS.forEach(f => {
+      try {
+        const plan = normalizePlan(op.plan);
+        const summary = pres.addSlide();
+        summary.background = { color: '0c0e0c' };
+        summary.addText('Pre-Ops Plan', { x: MARGIN, y: 0.25, fontSize: 24, bold: true, color: 'c7b482' });
+        let py = 0.85;
+        PLAN_FIELDS.forEach(f => {
+          const text = planFieldText(plan, f.key);
+          summary.addText(f.label, { x: MARGIN, y: py, fontSize: 12, bold: true, color: 'd4b86a' });
+          py += 0.28;
+          const line = text || 'Not yet filled in';
+          const preview = line.length > 280 ? line.slice(0, 277) + '...' : line;
+          summary.addText(preview, { x: MARGIN, y: py, w: W-MARGIN*2, h: 0.55, fontSize: 12, color: 'e8e6df', valign: 'top' });
+          py += 0.58;
+        });
+        PLAN_FIELDS.forEach(f => {
+          const s = pres.addSlide();
+          s.background = { color: '0c0e0c' };
+          s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+          s.addText(planFieldText(plan, f.key) || 'Not yet filled in', { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4.2, fontSize: 14, color: 'e8e6df', valign: 'top' });
+        });
+      } catch(planErr){
+        console.error('Plan slides failed', planErr);
         const s = pres.addSlide();
         s.background = { color: '0c0e0c' };
-        s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-        s.addText((op.plan && op.plan[f.key]) || 'Not yet filled in', { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4, fontSize: 14, color: 'e8e6df', valign: 'top' });
-      });
+        s.addText('Pre-Ops Plan', { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
+        s.addText('Could not render plan fields.', { x: MARGIN, y: 1.1, fontSize: 14, color: 'e8e6df' });
+      }
     }
 
     if(opt.assets !== false){
