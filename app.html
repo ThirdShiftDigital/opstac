@@ -799,6 +799,7 @@
 
   <div class="topbar">
     <div class="brand-mark">
+      <img src="" alt="" class="agency-patch" id="topAgencyPatch" style="display:none; height:28px; width:28px; object-fit:contain; border-radius:4px;">
       <div>
         <img src="logo.png" alt="OpsTac" class="brand-logo">
         <div class="brand-sub">SRT Module</div>
@@ -1025,6 +1026,15 @@
         <div class="custom-color-wrap">
           <input type="color" class="custom-color-input" id="customColorInput" value="#b59a4d" title="Custom color">
         </div>
+      </div>
+
+      <div class="settings-row" style="align-items:flex-start;">
+        <div style="flex:1;">
+          <div class="settings-label">Agency patch</div>
+          <div class="settings-sub">Shown in the app, print reports, and presentations</div>
+          <input type="file" id="agencyPatchInput" accept="image/*" style="margin-top:10px; font-size:12px;">
+        </div>
+        <img id="agencyPatchPreview" alt="" style="display:none; height:48px; width:48px; object-fit:contain; border-radius:4px; margin-left:12px;">
       </div>
 
       <div id="permissionsSettingsGroup">

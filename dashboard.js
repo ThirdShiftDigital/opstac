@@ -172,11 +172,21 @@ async function onSignedIn(){
   currentProfile = profile;
 
   const [{ data: agency }, { data: settings }] = await Promise.all([
-    supabaseClient.from('agencies').select('name').eq('id', profile.agency_id).single(),
+    supabaseClient.from('agencies').select('name, patch_path').eq('id', profile.agency_id).single(),
     supabaseClient.from('agency_settings').select('*').eq('agency_id', profile.agency_id).single(),
   ]);
   currentAgency = agency;
   currentSettings = settings;
+  (async () => {
+    const path = (agency && agency.patch_path) || (settings && settings.patch_path);
+    if(!path) return;
+    const { data } = await supabaseClient.storage.from('operation-maps').createSignedUrl(path, 3600);
+    if(data && data.signedUrl){
+      window._agencyPatchUrl = data.signedUrl;
+      const img = document.getElementById('sidebarAgencyPatch');
+      if(img){ img.src = data.signedUrl; img.style.display = 'block'; }
+    }
+  })();
 
   if(settings && settings.accent_color) applyTheme(settings.accent_color, settings.accent_bright);
 
@@ -1443,8 +1453,10 @@ async function printOpReport(op, operators){
     <html><head><title>${op.name}</title><style>@media print{.no-print{display:none!important;}}</style></head>
     <body style="font-family:sans-serif; padding:40px; color:#111;">
       <button class="no-print" onclick="window.close()" style="position:fixed; top:16px; right:16px; padding:10px 18px; background:#0c0e0c; color:#e8e6df; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; z-index:10;">✕ Close & Return to OpsTac</button>
+      ${window._agencyPatchUrl ? `<img src="${window._agencyPatchUrl}" style="height:64px; margin-bottom:12px;">` : ''}
       <h1>${op.name}</h1>
       <p>${op.type||''} · ${op.status} · ${op.date||''} · ${op.location||''}</p>
+      ${currentAgency && currentAgency.name ? `<p><strong>${currentAgency.name}</strong></p>` : ''}
       ${commander ? `<p><strong>Overall Command:</strong> ${commander.name}</p>` : ''}
       <h3>Operators</h3>${rosterLines || '<p>None assigned.</p>'}
       ${photosHtml}
@@ -1473,8 +1485,21 @@ async function exportOpPresentation(op, operators){
 
     let slide = pres.addSlide();
     slide.background = { color: '0c0e0c' };
-    slide.addText(op.name, { x: MARGIN, y: 2.1, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
-    slide.addText(`${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.0, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
+    if(window._agencyPatchUrl){
+      try {
+        const resp = await fetch(window._agencyPatchUrl);
+        const blob = await resp.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        slide.addImage({ data: dataUrl, x: 4.25, y: 0.7, w: 1.5, h: 1.5 });
+      } catch(e){}
+    }
+    slide.addText(op.name, { x: MARGIN, y: 2.4, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
+    slide.addText(`${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.4, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
 
     const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
     slide = pres.addSlide();

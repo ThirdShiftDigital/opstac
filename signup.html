@@ -176,6 +176,12 @@
             <input type="text" id="agencyName" placeholder="e.g. Example County Sheriff's Office" required>
           </div>
           <div class="field-group">
+            <label>Agency Patch</label>
+            <input type="file" id="agencyPatch" accept="image/*">
+            <div style="font-size:12px; color:var(--text-dim); margin-top:6px;">Optional. Used on briefs, printouts, and in the app.</div>
+            <img id="agencyPatchPreview" alt="" style="display:none; max-height:72px; margin-top:10px; border-radius:6px;">
+          </div>
+          <div class="field-group">
             <label>Your Full Name</label>
             <input type="text" id="fullName" placeholder="e.g. Jane Smith" required>
           </div>
@@ -423,6 +429,18 @@ function showError(msg){
   box.style.display = 'block';
 }
 
+
+const patchInput = document.getElementById('agencyPatch');
+if(patchInput){
+  patchInput.addEventListener('change', () => {
+    const file = patchInput.files[0];
+    const img = document.getElementById('agencyPatchPreview');
+    if(!file || !img){ if(img) img.style.display='none'; return; }
+    img.src = URL.createObjectURL(file);
+    img.style.display = 'block';
+  });
+}
+
 document.getElementById('signupForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if(!structureChoice){
@@ -491,6 +509,19 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
         'Your OpsTac agency account is ready. Sign in to continue.';
       document.getElementById('goToDashboardBtn').style.display = 'inline-block';
       return;
+    }
+
+    const patchFile = document.getElementById('agencyPatch').files[0];
+    if(patchFile && data.agencyId){
+      try {
+        const ext = (patchFile.name.split('.').pop() || 'png').toLowerCase();
+        const path = data.agencyId + '/agency-patch.' + ext;
+        await supabaseClient.storage.from('operation-maps').upload(path, patchFile, { upsert: true });
+        await supabaseClient.from('agency_settings').update({ patch_path: path }).eq('agency_id', data.agencyId);
+        await supabaseClient.from('agencies').update({ patch_path: path }).eq('id', data.agencyId);
+      } catch (patchErr) {
+        console.warn('Patch upload skipped', patchErr);
+      }
     }
 
     document.getElementById('successText').textContent = 'Taking you to your dashboard...';

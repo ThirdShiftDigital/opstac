@@ -53,6 +53,45 @@ async function loadCorePersonnel(){
   allSubteams = subteams || [];
 }
 
+
+async function getAgencyPatchUrl(){
+  const path = (currentSettings && currentSettings.patch_path) || (currentAgency && currentAgency.patch_path) || '';
+  if(!path) return '';
+  const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(path, 3600);
+  if(error || !data) return '';
+  return data.signedUrl;
+}
+async function applyAgencyPatch(){
+  const url = await getAgencyPatchUrl();
+  window._agencyPatchUrl = url || '';
+  const top = $('#topAgencyPatch');
+  const preview = $('#agencyPatchPreview');
+  if(top){
+    if(url){ top.src = url; top.style.display = 'block'; }
+    else { top.style.display = 'none'; }
+  }
+  if(preview){
+    if(url){ preview.src = url; preview.style.display = 'block'; }
+    else { preview.style.display = 'none'; }
+  }
+}
+async function getAgencyPatchDataUrl(){
+  const url = window._agencyPatchUrl || await getAgencyPatchUrl();
+  if(!url) return '';
+  try {
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch(e){
+    return '';
+  }
+}
+
 function applyTheme(accent, bright){
   document.documentElement.style.setProperty('--olive', accent);
   document.documentElement.style.setProperty('--olive-bright', bright);
@@ -189,7 +228,7 @@ async function onSignedIn(){
   currentProfile = profile;
 
   const [{ data: agency }, { data: settings }, { data: myRow }] = await Promise.all([
-    supabaseClient.from('agencies').select('name, agency_code').eq('id', profile.agency_id).single(),
+    supabaseClient.from('agencies').select('name, agency_code, patch_path').eq('id', profile.agency_id).single(),
     supabaseClient.from('agency_settings').select('*').eq('agency_id', profile.agency_id).single(),
     supabaseClient.from('personnel').select('*').eq('profile_id', user.id).single(),
   ]);
@@ -198,6 +237,7 @@ async function onSignedIn(){
   myPersonnel = myRow || null;
 
   if(settings && settings.accent_color) applyTheme(settings.accent_color, settings.accent_bright);
+  await applyAgencyPatch();
 
   $('#topAvatar').textContent = profile.full_name.split(' ').map(w=>w[0]).slice(-2).join('').toUpperCase();
   $('#acctNameLabel').textContent = profile.full_name;
@@ -2162,7 +2202,9 @@ $('#opPrintBtn').addEventListener('click', async () => {
     : '';
   w.document.write(`<html><head><title>${op.name}</title><style>@media print{.no-print{display:none!important;}}</style></head><body style="font-family:sans-serif; padding:40px; color:#111;">
     <button class="no-print" onclick="window.close()" style="position:fixed; top:16px; right:16px; padding:10px 18px; background:#0c0e0c; color:#e8e6df; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; z-index:10;">✕ Close & Return to OpsTac</button>
+    ${window._agencyPatchUrl ? `<img src="${window._agencyPatchUrl}" style="height:64px; margin-bottom:12px;">` : ''}
     <h1>${op.name}</h1><p>${op.type||''} · ${op.status} · ${op.date||''} · ${op.location||''}</p>
+    ${currentAgency && currentAgency.name ? `<p><strong>${currentAgency.name}</strong></p>` : ''}
     ${commander ? `<p><strong>Overall Command:</strong> ${commander.name}</p>` : ''}
     <h3>Operators</h3>${rosterLines || '<p>None assigned.</p>'}
     ${stacksPrintHtml}
@@ -2189,10 +2231,14 @@ $('#opPresentBtn').addEventListener('click', async () => {
     pres.layout = 'LAYOUT_16x9';
     const W = 10, MARGIN = 0.5;
 
+    const patchData = await getAgencyPatchDataUrl();
     let slide = pres.addSlide();
     slide.background = { color: '0c0e0c' };
-    slide.addText(op.name, { x: MARGIN, y: 2.1, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
-    slide.addText(`${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.0, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
+    if(patchData){
+      slide.addImage({ data: patchData, x: 4.25, y: 0.7, w: 1.5, h: 1.5 });
+    }
+    slide.addText(op.name, { x: MARGIN, y: 2.4, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
+    slide.addText(`${currentAgency && currentAgency.name ? currentAgency.name + '  ·  ' : ''}${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.4, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
 
     const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
     slide = pres.addSlide();
@@ -2932,4 +2978,19 @@ $('#eSubteamDelete').addEventListener('click', async () => {
   await supabaseClient.from('subteams').delete().eq('id', editingSubteamId);
   $('#editSubteamSheet').classList.remove('active');
   loadRoster();
+});
+
+
+$('#agencyPatchInput') && $('#agencyPatchInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file || !currentProfile) return;
+  const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+  const path = `${currentProfile.agency_id}/agency-patch.${ext}`;
+  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert: true });
+  if(error){ alert('Could not upload patch: ' + error.message); return; }
+  if(currentSettings) currentSettings.patch_path = path;
+  if(currentAgency) currentAgency.patch_path = path;
+  await supabaseClient.from('agency_settings').update({ patch_path: path }).eq('agency_id', currentProfile.agency_id);
+  await supabaseClient.from('agencies').update({ patch_path: path }).eq('id', currentProfile.agency_id);
+  await applyAgencyPatch();
 });
