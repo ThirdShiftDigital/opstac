@@ -1017,6 +1017,8 @@ async function openOpDetail(opId){
   opsView = 'detail';
   armedOperatorId = null;
   selectedPinMemberId = null;
+  selectedStackId = null;
+  placingStack = false;
   $('#opsListView').style.display = 'none';
   $('#opsDetailView').style.display = 'block';
   $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='map'));
@@ -1030,6 +1032,10 @@ async function openOpDetail(opId){
     op.ops_log = op.debrief._ops_log;
   }
   if(op && !Array.isArray(op.ops_log)) op.ops_log = [];
+  if(op && !Array.isArray(op.map_stacks) && op.debrief && Array.isArray(op.debrief._map_stacks)){
+    op.map_stacks = op.debrief._map_stacks;
+  }
+  if(op && !Array.isArray(op.map_stacks)) op.map_stacks = [];
   renderOpDetail(op, operators || []);
   updateFab('operations');
 }
@@ -1102,6 +1108,7 @@ function renderOpDetail(op, operators){
   renderMapPalette(op, operators);
   renderMapImageState(op);
   renderMapPins(operators);
+  renderStacks(op);
   renderPlan(op);
   renderOpsLog(op);
   renderDebrief(op);
@@ -1117,6 +1124,8 @@ $('#opDeleteBtn').addEventListener('click', async () => {
 });
 
 let selectedPinMemberId = null; // pin selected for move/remove
+let selectedStackId = null;
+let placingStack = false;
 
 const OP_ASSIGNMENT_ROLES = [
   'Entry', 'Perimeter', 'Overwatch', 'Breach', 'Cover',
@@ -1302,16 +1311,59 @@ function renderMapPins(operators){
 }
 
 // Re-bind map click (remove old listeners by cloning would be complex; replace handler body via flag)
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#newStackBtn');
+  if(!btn) return;
+  if(!canEditOps() || !currentOpCache) return;
+  placingStack = true;
+  selectedStackId = null;
+  selectedPinMemberId = null;
+  armedOperatorId = null;
+  renderMapPalette(currentOpCache, currentOperatorsCache);
+  renderStacks(currentOpCache);
+  $('#mapHint').textContent = 'Tap the map to place the stack (entry point, door, etc.).';
+});
+
 if(!window._mapClickBound){
   window._mapClickBound = true;
   $('#mapCanvas').addEventListener('click', async (e) => {
     if(!canEditOps()) return;
-    if(e.target.closest('#mapUploadPrompt') || e.target.closest('#mapChangeBtn') || e.target.closest('.map-pin')) return;
+    if(e.target.closest('#mapUploadPrompt') || e.target.closest('#mapChangeBtn') || e.target.closest('.map-pin') || e.target.closest('.map-stack-pin')) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
     const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
     const clampedX = Math.max(3, Math.min(97, x));
     const clampedY = Math.max(3, Math.min(97, y));
+
+    // Place a new stack
+    if(placingStack){
+      const stacks = Array.isArray(currentOpCache.map_stacks) ? currentOpCache.map_stacks : [];
+      const st = {
+        id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()),
+        name: 'Entry Stack',
+        x: clampedX, y: clampedY,
+        members: []
+      };
+      await saveMapStacks([...stacks, st]);
+      placingStack = false;
+      selectedStackId = st.id;
+      renderStacks(currentOpCache);
+      $('#mapHint').textContent = 'Stack placed. Add operators in order below.';
+      return;
+    }
+
+    // Move selected stack
+    if(selectedStackId){
+      const stacks = (currentOpCache.map_stacks || []).map(s =>
+        s.id === selectedStackId ? { ...s, x: clampedX, y: clampedY } : s
+      );
+      await saveMapStacks(stacks);
+      selectedStackId = null;
+      renderStacks(currentOpCache);
+      $('#mapHint').textContent = 'Place individuals for perimeter/command. Use a stack for entry teams.';
+      return;
+    }
 
     // Move selected pin
     if(selectedPinMemberId){
@@ -1353,6 +1405,153 @@ if(!window._mapClickBound){
     renderMapPins(currentOperatorsCache);
     renderMapPalette(currentOpCache, currentOperatorsCache);
     $('#mapHint').textContent = 'Tap a team member below, then tap the map to place them.';
+  });
+}
+
+
+async function saveMapStacks(stacks){
+  const { error } = await supabaseClient.from('operations').update({ map_stacks: stacks }).eq('id', currentOpId);
+  if(error){
+    console.warn('map_stacks column missing, storing under debrief', error);
+    const debrief = { ...(currentOpCache.debrief || {}), _map_stacks: stacks };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+  currentOpCache.map_stacks = stacks;
+}
+
+function renderStacks(op){
+  $$('.map-stack-pin').forEach(p => p.remove());
+  const canvas = $('#mapCanvas');
+  if(!canvas) return;
+  const stacks = Array.isArray(op.map_stacks) ? op.map_stacks : [];
+  const editable = canEditOps();
+  const tb = $('#mapToolbar');
+  if(tb) tb.style.display = editable ? 'flex' : 'none';
+
+  stacks.forEach(st => {
+    const pin = document.createElement('div');
+    pin.className = 'map-stack-pin' + (selectedStackId === st.id ? ' selected' : '');
+    pin.style.left = st.x + '%';
+    pin.style.top = st.y + '%';
+    const names = (st.members || []).map(m => {
+      const p = memberById(m.member_id);
+      return p ? p.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
+    }).join(' · ');
+    pin.innerHTML = `<div class="map-stack-name">${st.name || 'Stack'}</div>
+      <div class="map-stack-count">${(st.members||[]).length} in stack</div>
+      ${names ? `<div class="map-stack-list">${names}</div>` : ''}`;
+    pin.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if(!editable) return;
+      selectedStackId = selectedStackId === st.id ? null : st.id;
+      selectedPinMemberId = null;
+      armedOperatorId = null;
+      placingStack = false;
+      renderStacks(currentOpCache);
+      renderStackEditor();
+      renderMapPalette(currentOpCache, currentOperatorsCache);
+      $('#mapHint').textContent = selectedStackId
+        ? 'Stack selected. Edit members below, tap map to move, or delete in the editor.'
+        : 'Place individuals for perimeter/command. Use a stack for entry teams.';
+    });
+    canvas.appendChild(pin);
+  });
+
+  renderStackEditor();
+}
+
+function renderStackEditor(){
+  const el = $('#stackEditor');
+  if(!el) return;
+  const editable = canEditOps();
+  const stacks = currentOpCache && Array.isArray(currentOpCache.map_stacks) ? currentOpCache.map_stacks : [];
+  const st = stacks.find(s => s.id === selectedStackId);
+  if(!st){ el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  const rows = (st.members || []).map((m, i) => {
+    const p = memberById(m.member_id);
+    const name = p ? p.name : 'Unknown';
+    return `<div class="stack-member-row" data-member-id="${m.member_id}">
+      <div class="stack-ord">${i+1}</div>
+      <div class="stack-member-name">${name}</div>
+      ${editable ? `
+        <button type="button" class="stack-ord-btn" data-dir="up" data-idx="${i}">↑</button>
+        <button type="button" class="stack-ord-btn" data-dir="down" data-idx="${i}">↓</button>
+        <button type="button" class="stack-rem-btn" data-idx="${i}">×</button>` : ''}
+    </div>`;
+  }).join('') || `<div style="font-size:12.5px; color:var(--text-dim); padding:6px 0;">No operators in this stack yet.</div>`;
+
+  const placedIds = new Set((st.members||[]).map(m => m.member_id));
+  const options = allPersonnel
+    .filter(p => !placedIds.has(p.id))
+    .map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="stack-editor-title">${st.name || 'Stack'}</div>
+    ${editable ? `<input class="field-input" id="stackNameInput" value="${(st.name||'').replace(/"/g,'&quot;')}" style="margin-bottom:10px; font-size:13px;">` : ''}
+    ${rows}
+    ${editable ? `
+      <div class="stack-add-row">
+        <select class="field-input" id="stackAddSelect" style="flex:1;"><option value="">Add operator...</option>${options}</select>
+        <button type="button" class="btn btn-primary" id="stackAddBtn" style="font-size:12px; padding:8px 12px;">Add</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button type="button" class="btn btn-outline" id="stackDoneBtn" style="font-size:12px; padding:7px 12px;">Done</button>
+        <button type="button" class="btn btn-outline" id="stackDeleteBtn" style="font-size:12px; padding:7px 12px; color:var(--bad); border-color:var(--bad);">Delete Stack</button>
+      </div>` : ''}`;
+
+  if(!editable) return;
+
+  $('#stackNameInput') && $('#stackNameInput').addEventListener('blur', async () => {
+    const name = $('#stackNameInput').value.trim() || 'Stack';
+    const next = stacks.map(s => s.id === st.id ? { ...s, name } : s);
+    await saveMapStacks(next);
+    renderStacks(currentOpCache);
+  });
+
+  $$('.stack-ord-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const idx = Number(btn.dataset.idx);
+    const dir = btn.dataset.dir;
+    const members = [...(st.members || [])];
+    const swap = dir === 'up' ? idx - 1 : idx + 1;
+    if(swap < 0 || swap >= members.length) return;
+    [members[idx], members[swap]] = [members[swap], members[idx]];
+    const next = stacks.map(s => s.id === st.id ? { ...s, members } : s);
+    await saveMapStacks(next);
+    renderStacks(currentOpCache);
+  }));
+
+  $$('.stack-rem-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const idx = Number(btn.dataset.idx);
+    const members = (st.members || []).filter((_, i) => i !== idx);
+    const next = stacks.map(s => s.id === st.id ? { ...s, members } : s);
+    await saveMapStacks(next);
+    renderStacks(currentOpCache);
+  }));
+
+  $('#stackAddBtn') && $('#stackAddBtn').addEventListener('click', async () => {
+    const id = $('#stackAddSelect').value;
+    if(!id) return;
+    const members = [...(st.members || []), { member_id: id }];
+    const next = stacks.map(s => s.id === st.id ? { ...s, members } : s);
+    await saveMapStacks(next);
+    renderStacks(currentOpCache);
+  });
+
+  $('#stackDoneBtn') && $('#stackDoneBtn').addEventListener('click', () => {
+    selectedStackId = null;
+    renderStacks(currentOpCache);
+    $('#mapHint').textContent = 'Place individuals for perimeter/command. Use a stack for entry teams.';
+  });
+
+  $('#stackDeleteBtn') && $('#stackDeleteBtn').addEventListener('click', async () => {
+    if(!confirm('Delete this stack? Operators are not removed from the roster.')) return;
+    const next = stacks.filter(s => s.id !== st.id);
+    selectedStackId = null;
+    await saveMapStacks(next);
+    renderStacks(currentOpCache);
   });
 }
 

@@ -602,6 +602,40 @@
     z-index: 7;
   }
 
+  
+  .map-toolbar{ display:flex; gap:8px; padding: 8px 14px 4px; }
+  .stack-editor{
+    margin: 8px 14px 10px; padding: 12px; background: var(--bg-panel);
+    border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .stack-editor-title{ font-family: Rajdhani, sans-serif; font-weight:700; text-transform:uppercase; font-size:14px; margin-bottom:8px; }
+  .stack-member-row{
+    display:flex; align-items:center; gap:8px; padding:7px 0;
+    border-bottom: 1px solid var(--line); font-size:13px;
+  }
+  .stack-member-row:last-child{ border-bottom:none; }
+  .stack-ord{
+    width:22px; height:22px; border-radius:4px; background: var(--olive-dim);
+    color: var(--olive-bright); font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .stack-member-name{ flex:1; }
+  .stack-ord-btn, .stack-rem-btn{
+    background:none; border:1px solid var(--line); color: var(--text-dim);
+    border-radius:4px; width:26px; height:26px; cursor:pointer; font-size:13px;
+  }
+  .stack-add-row{ display:flex; gap:8px; margin-top:10px; }
+  .map-stack-pin{
+    position:absolute; transform: translate(-50%, -50%);
+    min-width: 42px; padding: 5px 7px 4px;
+    background: var(--bg-panel); border: 1.5px solid var(--olive);
+    border-radius: 6px; z-index: 5; text-align:center; cursor:pointer;
+  }
+  .map-stack-pin.selected{ box-shadow: 0 0 0 2px var(--olive-bright); }
+  .map-stack-name{ font-size:9px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color: var(--olive-bright); }
+  .map-stack-count{ font-size:11px; font-weight:700; color: var(--text); }
+  .map-stack-list{ font-size:9px; color: var(--text-dim); margin-top:2px; line-height:1.25; }
+
   /* ---- Ops Log ---- */
   .op-role-bar-label{
     width: 100%; font-size: 11px; color: var(--text-dim); margin-bottom: 2px;
@@ -849,9 +883,13 @@
         </div>
 
         <div class="subpanel active" id="opPanel-map">
-          <div class="map-hint" id="mapHint">Tap a team member below, choose a role, then tap the map to place them.</div>
+          <div class="map-hint" id="mapHint">Place individuals for perimeter/command. Use a stack for entry teams.</div>
+          <div class="map-toolbar" id="mapToolbar">
+            <button type="button" class="btn btn-outline" id="newStackBtn" style="font-size:12px; padding:7px 12px;">+ New Stack</button>
+          </div>
           <div class="op-role-bar" id="opRoleBar" style="display:none;"></div>
           <div class="op-palette" id="opPalette"></div>
+          <div id="stackEditor" class="stack-editor" style="display:none;"></div>
           <input type="file" accept="image/*" id="mapImageInput" style="display:none">
           <div class="map-canvas" id="mapCanvas">
             <div class="map-upload-prompt" id="mapUploadPrompt">
