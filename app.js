@@ -3930,7 +3930,7 @@ async function loadCalloutsIntoOpsList(){
   $$('[data-edit-callout]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     openEditCalloutSheet(list.find(c => c.id === btn.dataset.editCallout));
-  });
+  }));
   $$('[data-standdown-callout]').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const id = btn.dataset.standdownCallout;
