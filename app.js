@@ -13,6 +13,20 @@ let myPersonnel = null;      // this user's own personnel row, if linked
 let allPersonnel = [];
 let allSubteams = [];
 
+const UNIT_NAME_PRESETS = ['Negotiators', 'Delta', 'Entry', 'Perimeter', 'Overwatch', 'TEMS', 'Command'];
+function fillNamePresets(containerId, inputId){
+  const el = $('#' + containerId);
+  if(!el) return;
+  el.innerHTML = UNIT_NAME_PRESETS.map(n => `<button type="button" class="ops-quick-btn" data-name="${n}">${n}</button>`).join('');
+  $$('#' + containerId + ' .ops-quick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = $('#' + inputId);
+      if(input) input.value = btn.dataset.name;
+    });
+  });
+}
+
+
 function memberById(id){ return allPersonnel.find(p => p.id === id); }
 function mapsLink(address){ return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`; }
 function mapsLinkHtml(address, label){
@@ -810,7 +824,14 @@ $('#mRemoveBtn').addEventListener('click', async () => {
   }
 });
 
-$('#addSubteamLink').addEventListener('click', () => $('#subteamSheet').classList.add('active'));
+$('#addSubteamLink').addEventListener('click', () => {
+  fillNamePresets('mSubteamPresets', 'mSubteamName');
+  if($('#mSubteamLeader')){
+    $('#mSubteamLeader').innerHTML = `<option value="">Assign commander later</option>` +
+      allPersonnel.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  }
+  $('#subteamSheet').classList.add('active');
+});
 
 $('#linkExistingLink').addEventListener('click', async () => {
   await loadCorePersonnel();
@@ -1076,6 +1097,10 @@ async function openOpDetail(opId){
     op.map_stacks = op.debrief._map_stacks;
   }
   if(op && !Array.isArray(op.map_stacks)) op.map_stacks = [];
+  if(op && !Array.isArray(op.attached_units) && op.debrief && Array.isArray(op.debrief._attached_units)){
+    op.attached_units = op.debrief._attached_units;
+  }
+  if(op && !Array.isArray(op.attached_units)) op.attached_units = [];
   renderOpDetail(op, operators || []);
   updateFab('operations');
 }
@@ -1661,6 +1686,107 @@ function stacksPlanHtml(op){
     ${individuals.length ? `<div class="field-label" style="margin:12px 0 6px;">Individual assignments</div>${indiv}` : ''}`;
 }
 
+
+async function saveAttachedUnits(units){
+  const { error } = await supabaseClient.from('operations').update({ attached_units: units }).eq('id', currentOpId);
+  if(error){
+    console.warn('attached_units column missing, storing under debrief', error);
+    const debrief = { ...(currentOpCache.debrief || {}), _attached_units: units };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+  currentOpCache.attached_units = units;
+}
+
+function renderAttachedUnits(op, editable){
+  const el = $('#planUnitsBox');
+  if(!el) return;
+  const units = Array.isArray(op.attached_units) ? op.attached_units : [];
+  const used = new Set(units.map(u => u.subteam_id).filter(Boolean));
+
+  const rows = units.map((u, idx) => {
+    const team = u.subteam_id ? subTeamById(u.subteam_id) : null;
+    const name = u.name || (team && team.name) || 'Unit';
+    const cmd = u.commander_personnel_id ? memberById(u.commander_personnel_id) : (team && team.leader_personnel_id ? memberById(team.leader_personnel_id) : null);
+    return `<div class="stack-member-row">
+      <div class="stack-ord">${idx+1}</div>
+      <div class="stack-member-name"><strong>${name}</strong>${cmd ? ' · ' + cmd.name : ' · No commander'}</div>
+      ${editable ? `<button type="button" class="stack-rem-btn" data-unit-idx="${idx}">×</button>` : ''}
+    </div>`;
+  }).join('') || `<div style="font-size:12.5px; color:var(--text-dim);">No specialty teams attached yet.</div>`;
+
+  const unused = allSubteams.filter(t => !used.has(t.id));
+  const attachOpts = unused.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  el.innerHTML = rows + (editable ? `
+    <div class="stack-add-row" style="flex-wrap:wrap;">
+      <select class="field-input" id="attachExistingUnit" style="flex:1; min-width:140px;">
+        <option value="">Attach existing team...</option>${attachOpts}
+      </select>
+      <button type="button" class="btn btn-outline" id="attachExistingBtn" style="font-size:12px; padding:8px 12px;">Attach</button>
+    </div>
+    <div class="stack-add-row" style="flex-wrap:wrap; margin-top:8px;">
+      <input type="text" class="field-input" id="newUnitName" placeholder="Or create a name (Delta, Negotiators...)" style="flex:1; min-width:140px;">
+      <select class="field-input" id="newUnitCommander" style="flex:1; min-width:140px;">
+        <option value="">Commander...</option>
+        ${allPersonnel.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-primary" id="createAttachUnitBtn" style="font-size:12px; padding:8px 12px;">Add Team</button>
+    </div>
+    <div class="ops-quick-row" id="newUnitPresets" style="margin-top:8px;"></div>
+  ` : '');
+
+  if(!editable) return;
+
+  fillNamePresets('newUnitPresets', 'newUnitName');
+
+  $$('[data-unit-idx]').forEach(btn => btn.addEventListener('click', async () => {
+    const next = units.filter((_, i) => i !== Number(btn.dataset.unitIdx));
+    await saveAttachedUnits(next);
+    renderAttachedUnits(currentOpCache, true);
+  }));
+
+  $('#attachExistingBtn') && $('#attachExistingBtn').addEventListener('click', async () => {
+    const id = $('#attachExistingUnit').value;
+    if(!id) return;
+    const team = subTeamById(id);
+    const next = [...units, {
+      id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()),
+      subteam_id: id,
+      name: team ? team.name : 'Team',
+      commander_personnel_id: team && team.leader_personnel_id ? team.leader_personnel_id : null
+    }];
+    await saveAttachedUnits(next);
+    renderAttachedUnits(currentOpCache, true);
+  });
+
+  $('#createAttachUnitBtn') && $('#createAttachUnitBtn').addEventListener('click', async () => {
+    const name = ($('#newUnitName').value || '').trim();
+    if(!name) return;
+    const commanderId = $('#newUnitCommander').value || null;
+    const { data: created, error } = await supabaseClient.from('subteams').insert({
+      agency_id: currentProfile.agency_id,
+      name,
+      leader_personnel_id: commanderId
+    }).select().single();
+    if(error){
+      // still attach as an ad-hoc named unit if subteam insert fails
+      console.warn('subteam create failed, attaching by name only', error);
+    } else {
+      allSubteams.push(created);
+    }
+    const next = [...units, {
+      id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()),
+      subteam_id: created ? created.id : null,
+      name,
+      commander_personnel_id: commanderId
+    }];
+    await saveAttachedUnits(next);
+    if($('#newUnitName')) $('#newUnitName').value = '';
+    renderAttachedUnits(currentOpCache, true);
+  });
+}
+
 const PLAN_FIELDS = [
   { key:'objective', label:'Objective' }, { key:'approach', label:'Approach / Entry Plan' },
   { key:'rallyPoint', label:'Rally Point' }, { key:'comms', label:'Communications Plan' },
@@ -1686,6 +1812,11 @@ function renderPlan(op){
       <select class="field-input" id="opCommanderSelect" ${!editable?'disabled':''}>${commanderOptions}</select>
     </div>
     <div class="field-group">
+      <label class="field-label">Attached Teams</label>
+      <div id="planUnitsBox"></div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin-top:6px;">Attach Negotiators, Delta, Entry, or create a name. Each team can have its own commander.</div>
+    </div>
+    <div class="field-group">
       <label class="field-label">Assignments &amp; Stacks</label>
       <div id="planStacksSummary">${stacksPlanHtml(op)}</div>
       <div style="font-size:11.5px; color:var(--text-dim); margin-top:6px;">Managed on the Map tab. Changes there show up here, in print, and in the presentation.</div>
@@ -1705,6 +1836,7 @@ function renderPlan(op){
 
   loadTargetPhotos(op.id, editable);
   loadOpAssets(op.id, editable);
+  renderAttachedUnits(op, editable);
 
   if(editable){
     $('#opCommanderSelect').addEventListener('change', async () => {
@@ -2193,6 +2325,12 @@ $('#opPrintBtn').addEventListener('click', async () => {
     ? `<h3>Target Location Photos</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">${photosWithUrls.map(p => `<a href="${p.url}" target="_blank"><img src="${p.url}" style="width:160px; height:160px; object-fit:cover; border-radius:4px; cursor:pointer;"></a>`).join('')}</div>`
     : '';
   const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
+  const unitsPrintHtml = (op.attached_units||[]).length
+    ? `<h3>Attached Teams</h3>` + (op.attached_units||[]).map(u => {
+        const cmd = u.commander_personnel_id ? memberById(u.commander_personnel_id) : null;
+        return `<div><strong>${u.name||'Team'}</strong>${cmd ? ' — Commander: ' + cmd.name : ''}</div>`;
+      }).join('')
+    : '';
   const rosterLines = currentOperatorsCache.map(o => { const m = memberById(o.member_id); return m ? `<div>${m.name}${o.role ? ' — ' + o.role : (m.team_role ? ' — ' + m.team_role : '')}</div>` : ''; }).join('');
   const stacksPrintHtml = getOpStacks(op).length
     ? `<h3>Stacks</h3>` + getOpStacks(op).map(st => {
@@ -2209,6 +2347,7 @@ $('#opPrintBtn').addEventListener('click', async () => {
     <h1>${op.name}</h1><p>${op.type||''} · ${op.status} · ${op.date||''} · ${op.location||''}</p>
     ${currentAgency && currentAgency.name ? `<p><strong>${currentAgency.name}</strong></p>` : ''}
     ${commander ? `<p><strong>Overall Command:</strong> ${commander.name}</p>` : ''}
+    ${unitsPrintHtml}
     <h3>Operators</h3>${rosterLines || '<p>None assigned.</p>'}
     ${stacksPrintHtml}
     ${photosHtml}
@@ -2252,6 +2391,11 @@ $('#opPresentBtn').addEventListener('click', async () => {
       slide.addText(`Overall Command: ${commander.name}`, { x: MARGIN, y, fontSize: 15, bold: true, color: 'e8e6df' });
       y += 0.5;
     }
+    (op.attached_units || []).forEach(u => {
+      const cmd = u.commander_personnel_id ? memberById(u.commander_personnel_id) : null;
+      slide.addText(`${u.name || 'Team'}${cmd ? ' — ' + cmd.name : ''}`, { x: MARGIN, y, fontSize: 13, color: 'e8e6df' });
+      y += 0.32;
+    });
     slide.addText('Operators', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.4;
     currentOperatorsCache.forEach(o => {
       const m = memberById(o.member_id);
@@ -2947,6 +3091,7 @@ $('#mSubteamSave').addEventListener('click', async () => {
   if(!name) return;
   await supabaseClient.from('subteams').insert({
     agency_id: currentProfile.agency_id, name, focus: $('#mSubteamFocus').value.trim() || null,
+    leader_personnel_id: ($('#mSubteamLeader') && $('#mSubteamLeader').value) || null,
   });
   $('#mSubteamName').value = ''; $('#mSubteamFocus').value = '';
   $('#subteamSheet').classList.remove('active');
@@ -2958,6 +3103,7 @@ function openSubteamEditSheet(subteam){
   editingSubteamId = subteam.id;
   $('#eSubteamName').value = subteam.name;
   $('#eSubteamFocus').value = subteam.focus || '';
+  fillNamePresets('eSubteamPresets', 'eSubteamName');
   const members = allPersonnel.filter(p => p.subteam_id === subteam.id);
   $('#eSubteamLeader').innerHTML = `<option value="">No leader assigned</option>` +
     members.map(p => `<option value="${p.id}" ${subteam.leader_personnel_id===p.id?'selected':''}>${p.name}</option>`).join('');

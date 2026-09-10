@@ -1182,8 +1182,13 @@
     <div class="new-op-sheet" id="subteamSheet">
       <div class="new-op-sheet-inner">
         <div class="sheet-title">Add Sub-Team</div>
-        <div class="field-group"><label class="field-label">Team Name</label><input type="text" class="field-input" id="mSubteamName" placeholder="e.g. Charlie Team"></div>
-        <div class="field-group"><label class="field-label">Focus</label><input type="text" class="field-input" id="mSubteamFocus" placeholder="e.g. Sniper / Observation"></div>
+        <div class="field-group">
+          <label class="field-label">Team Name</label>
+          <div class="ops-quick-row" id="mSubteamPresets" style="margin-bottom:8px;"></div>
+          <input type="text" class="field-input" id="mSubteamName" placeholder="Select a name or type your own">
+        </div>
+        <div class="field-group"><label class="field-label">Focus</label><input type="text" class="field-input" id="mSubteamFocus" placeholder="e.g. Negotiations, drones, entry"></div>
+        <div class="field-group"><label class="field-label">Team Commander</label><select class="field-input" id="mSubteamLeader"></select></div>
         <div class="sheet-actions">
           <button class="btn ghost" id="mSubteamCancel">Cancel</button>
           <button class="btn" id="mSubteamSave">Create</button>
@@ -1195,7 +1200,11 @@
     <div class="new-op-sheet" id="editSubteamSheet">
       <div class="new-op-sheet-inner">
         <div class="sheet-title">Edit Sub-Team</div>
-        <div class="field-group"><label class="field-label">Team Name</label><input type="text" class="field-input" id="eSubteamName"></div>
+        <div class="field-group">
+          <label class="field-label">Team Name</label>
+          <div class="ops-quick-row" id="eSubteamPresets" style="margin-bottom:8px;"></div>
+          <input type="text" class="field-input" id="eSubteamName">
+        </div>
         <div class="field-group"><label class="field-label">Focus</label><input type="text" class="field-input" id="eSubteamFocus"></div>
         <div class="field-group"><label class="field-label">Team Leader</label><select class="field-input" id="eSubteamLeader"></select>
           <div class="signal-hint" id="eSubteamNoMembers" style="display:none; margin-top:6px;">No one's assigned to this team yet.</div>
