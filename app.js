@@ -702,8 +702,7 @@ function openMemberSheet(existing){
   $('#mMemberName').value = existing ? existing.name : '';
   $('#mMemberRank').value = existing ? existing.rank||'' : '';
   $('#mMemberRole').value = existing ? existing.team_role||'' : '';
-  if($('#mMemberUnit')) $('#mMemberUnit').value = existing ? (existing.unit_number||existing.unit||'') : '';
-  if($('#mMemberCallsign')) $('#mMemberCallsign').value = existing ? (existing.callsign||'') : '';
+  if($('#mMemberCallsign')) $('#mMemberCallsign').value = existing ? (existing.callsign||existing.unit_number||existing.unit||'') : '';
   $('#mMemberPhone').value = existing ? existing.phone||'' : '';
   $('#mMemberStatus').value = existing ? existing.status : 'ready';
   populateSubteamSelect(existing);
@@ -746,8 +745,8 @@ $('#mMemberSave').addEventListener('click', async () => {
     name,
     rank: $('#mMemberRank').value.trim() || null,
     team_role: $('#mMemberRole').value.trim() || null,
-    unit_number: ($('#mMemberUnit') && $('#mMemberUnit').value.trim()) || null,
     callsign: ($('#mMemberCallsign') && $('#mMemberCallsign').value.trim()) || null,
+    unit_number: ($('#mMemberCallsign') && $('#mMemberCallsign').value.trim()) || null,
     subteam_id: $('#mMemberSubteam').value || null,
     phone: $('#mMemberPhone').value.trim() || null,
     status: $('#mMemberStatus').value,
@@ -1684,10 +1683,8 @@ async function focusOpOnLiveMap(op){
 
 function operatorUnitLabel(person){
   if(!person) return '?';
-  const cs = String(person.callsign||'').trim();
-  if(cs) return cs.length <= 6 ? cs : cs.slice(0,6);
-  const raw = person.unit_number || person.unit || person.badge || '';
-  if(String(raw).trim()) return String(raw).trim().slice(0,4);
+  const raw = String(person.callsign || person.unit_number || person.unit || person.badge || '').trim();
+  if(raw) return raw.length <= 6 ? raw : raw.slice(0,6);
   const fromName = String(person.name||'').match(/(\d{1,4})/);
   if(fromName) return fromName[1];
   return String(person.name||'?').split(' ').map(w => w[0]).join('').slice(0,3).toUpperCase();
