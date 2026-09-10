@@ -3489,20 +3489,46 @@ $('#presentSetupGo') && $('#presentSetupGo').addEventListener('click', async () 
   await generateOpPresentation(currentOpCache);
 });
 
+async function blobToDataUrl(blob){
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 async function captureOpMapDataUrl(op){
   try {
-    if(!op.map_image_url) return '';
-    const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600);
-    if(error || !data) return '';
-    const resp = await fetch(data.signedUrl);
-    const blob = await resp.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch(e){ return ''; }
+    if(op.map_image_url){
+      const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600);
+      if(!error && data && data.signedUrl){
+        const resp = await fetch(data.signedUrl);
+        if(resp.ok) return await blobToDataUrl(await resp.blob());
+      }
+    }
+    const pts = []
+      .concat(op.checkins || [])
+      .concat(op.map_markers || [])
+      .concat(op.map_stacks || [])
+      .concat(currentOperatorsCache || [])
+      .filter(x => x && x.lat != null && x.lng != null);
+    let lat = pts.length ? Number(pts[0].lat) : null;
+    let lng = pts.length ? Number(pts[0].lng) : null;
+    if(lat == null){
+      const hit = await geocodeAddress(op.location || op.name || '');
+      if(hit){ lat = hit.lat; lng = hit.lng; }
+    }
+    if(lat == null || lng == null) return '';
+    const d = 0.0035;
+    const bbox = [lng-d, lat-d, lng+d, lat+d].join(',');
+    const url = 'https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=' + encodeURIComponent(bbox) + '&bboxSR=4326&imageSR=4326&size=1600,900&format=jpg&f=image';
+    const resp = await fetch(url);
+    if(!resp.ok) return '';
+    return await blobToDataUrl(await resp.blob());
+  } catch(e){
+    console.warn('map still failed', e);
+    return '';
+  }
 }
 function presOpts(){
   const o = { title:true, overview:true, map:true, assignments:true, plan:true, photos:true, assets:true, log:true };
@@ -3580,7 +3606,7 @@ async function generateOpPresentation(op){
         try { slide.addImage({ data: mapData, x: 0.4, y: 0.7, w: 9.2, h: 4.5 }); }
         catch(imgErr){ slide.addText('Map image could not be embedded.', { x: MARGIN, y: 2.4, fontSize: 14, color: 'a89968' }); }
       } else {
-        slide.addText('No map image uploaded.', { x: MARGIN, y: 2.4, fontSize: 16, color: 'a89968' });
+        slide.addText(op.location || 'Map could not be captured. Open the live map in the app.', { x: MARGIN, y: 2.4, w: W-MARGIN*2, fontSize: 16, color: 'a89968' });
       }
     }
 
@@ -3613,24 +3639,11 @@ async function generateOpPresentation(op){
     if(opt.plan !== false){
       try {
         const plan = normalizePlan(op.plan);
-        const summary = pres.addSlide();
-        summary.background = { color: '0c0e0c' };
-        summary.addText('Pre-Ops Plan', { x: MARGIN, y: 0.25, fontSize: 24, bold: true, color: 'c7b482' });
-        let py = 0.85;
-        PLAN_FIELDS.forEach(f => {
-          const text = planFieldText(plan, f.key);
-          summary.addText(f.label, { x: MARGIN, y: py, fontSize: 12, bold: true, color: 'd4b86a' });
-          py += 0.28;
-          const line = text || 'Not yet filled in';
-          const preview = line.length > 280 ? line.slice(0, 277) + '...' : line;
-          summary.addText(preview, { x: MARGIN, y: py, w: W-MARGIN*2, h: 0.55, fontSize: 12, color: 'e8e6df', valign: 'top' });
-          py += 0.58;
-        });
         PLAN_FIELDS.forEach(f => {
           const s = pres.addSlide();
           s.background = { color: '0c0e0c' };
-          s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-          s.addText(planFieldText(plan, f.key) || 'Not yet filled in', { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4.2, fontSize: 14, color: 'e8e6df', valign: 'top' });
+          s.addText(f.label, { x: MARGIN, y: 0.28, w: W-MARGIN*2, h: 0.5, fontSize: 22, bold: true, color: 'c7b482' });
+          s.addText(planFieldText(plan, f.key) || 'Not yet filled in', { x: MARGIN, y: 0.95, w: W-MARGIN*2, h: 4.3, fontSize: 15, color: 'e8e6df', valign: 'top', wrap: true });
         });
       } catch(planErr){
         console.error('Plan slides failed', planErr);
