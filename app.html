@@ -357,6 +357,8 @@
   }
   .mode-btn.selected[data-mode="standby"]{ background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
   .mode-btn.selected[data-mode="deploy"]{ background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+  .mode-btn.selected[data-mode="standdown"]{ background: rgba(111,140,116,0.16); border-color: #6b8c74; color: #8fbf88; }
+  .mode-pill.standdown{ background: rgba(111,140,116,0.16); color: #8fbf88; }
   .mode-pill{
     font-size:9px; letter-spacing:0.01em; font-weight:700; border-radius:8px;
     padding:2px 7px; margin-top:6px; margin-right:6px; display:inline-block;
@@ -1372,6 +1374,7 @@
           <div class="mode-toggle" id="eCoModeToggle">
             <div class="mode-btn" data-mode="standby">Standby Only</div>
             <div class="mode-btn" data-mode="deploy">Deploy</div>
+            <div class="mode-btn" data-mode="standdown">Stand Down</div>
           </div>
         </div>
         <div class="field-group"><label class="field-label">Location</label><input type="text" class="field-input" id="eCoLocation"></div>

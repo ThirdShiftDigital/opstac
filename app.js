@@ -320,6 +320,13 @@ document.addEventListener('click', (e) => {
 document.addEventListener('DOMContentLoaded', syncPushBtn);
 
 
+function calloutAlertTitle(mode, type){
+  const base = mode === 'deploy' ? 'DEPLOY' : mode === 'standby' ? 'STANDBY' : mode === 'standdown' ? 'STAND DOWN' : 'CALLOUT';
+  return type ? base + ' — ' + type : base;
+}
+function calloutModeLabel(mode){
+  return mode === 'deploy' ? 'Deploy' : mode === 'standby' ? 'Standby Only' : mode === 'standdown' ? 'Stand Down' : 'Callout';
+}
 async function fireCalloutAlert({ title, body }){
   const payload = { type:'CALLOUT', title: title || 'OpsTac Callout', body: body || 'New activation', url:'/app.html', tag:'opstac-callout' };
   if(navigator.serviceWorker && navigator.serviceWorker.controller){
@@ -346,14 +353,14 @@ function listenForCalloutAlerts(){
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'callouts' }, payload => {
         const row = payload.new || {};
         fireCalloutAlert({
-          title: (row.mode === 'deploy' ? 'DEPLOY' : row.mode === 'standby' ? 'STANDBY' : 'CALLOUT') + (row.type ? ' — ' + row.type : ''),
+          title: calloutAlertTitle(row.mode, row.type),
           body: row.message || row.location || 'New activation'
         });
       })
       .on('postgres_changes', { event:'UPDATE', schema:'public', table:'callouts' }, payload => {
         const row = payload.new || {};
         fireCalloutAlert({
-          title: 'UPDATED ' + (row.mode === 'deploy' ? 'DEPLOY' : row.mode === 'standby' ? 'STANDBY' : 'CALLOUT') + (row.type ? ' — ' + row.type : ''),
+          title: 'UPDATED ' + calloutAlertTitle(row.mode, row.type),
           body: row.message || row.location || 'Callout updated'
         });
       })
@@ -1466,7 +1473,7 @@ async function renderOpCallouts(opId){
       <div style="min-width:0; flex:1;">
         <div class="callout-type">${co.type||'Callout'}</div>
         <div class="callout-meta">${co.date||''} ${co.location?'— '+co.location:''}${mapsLinkHtml(co.location)}</div>
-        <div><span class="mode-pill ${co.mode}">${co.mode==='deploy'?'Deploy':'Standby'}</span>
+        <div><span class="mode-pill ${co.mode}">${calloutModeLabel(co.mode)}</span>
           <div class="callout-method-tag" style="display:inline-block; vertical-align:top; margin-top:6px;">${methodLabel[co.method]||co.method}</div></div>
         <div class="callout-ack-list">${rows}</div>
       </div></div>`;
@@ -3865,15 +3872,16 @@ async function loadCalloutsIntoOpsList(){
         </div></div>`;
     }).join('');
     const editBtn = canManageCallouts() ? `<button class="btn btn-ghost" data-edit-callout="${co.id}" style="padding:5px 12px; font-size:11px; flex-shrink:0;">Edit</button>` : '';
+    const standBtn = canManageCallouts() && co.mode !== 'standdown' ? `<button class="btn btn-ghost" data-standdown-callout="${co.id}" style="padding:5px 12px; font-size:11px; flex-shrink:0;">Stand Down</button>` : '';
     return `<div class="callout-card">
       <div class="callout-marker ${co.active?'active':''}"></div>
       <div style="min-width:0; flex:1;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
           <div class="callout-type">${co.type||'Callout'}</div>
-          ${editBtn}
+          ${standBtn}${editBtn}
         </div>
         <div class="callout-meta">${co.date||''} at ${co.time||''}${co.location?' — '+co.location:''}${mapsLinkHtml(co.location)}</div>
-        <div>${co.mode ? `<span class="mode-pill ${co.mode}">${co.mode==='standby'?'Standby Only':'Deploy'}</span>` : ''}
+        <div>${co.mode ? `<span class="mode-pill ${co.mode}">${calloutModeLabel(co.mode)}</span>` : ''}
           ${co.method ? `<div class="callout-method-tag" style="display:inline-block; vertical-align:top; margin-top:6px;">${methodLabel[co.method]||co.method}</div>` : ''}
           ${!co.active ? `<span class="flag oncall" style="margin-left:6px;">Resolved</span>` : ''}</div>
         ${co.rally_location ? `<div class="callout-meta" style="margin-top:6px;">Rally: ${co.rally_location}${mapsLinkHtml(co.rally_location)}</div>` : ''}
@@ -3886,6 +3894,14 @@ async function loadCalloutsIntoOpsList(){
   $$('[data-edit-callout]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     openEditCalloutSheet(list.find(c => c.id === btn.dataset.editCallout));
+  });
+  $$('[data-standdown-callout]').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.dataset.standdownCallout;
+    if(!confirm('Stand down this callout and notify the team?')) return;
+    await supabaseClient.from('callouts').update({ mode: 'standdown', active: false, message: 'SRT STAND DOWN. Return to normal status. Do not respond.' }).eq('id', id);
+    fireCalloutAlert({ title: 'STAND DOWN', body: 'Return to normal status. Do not respond.' });
+    loadCalloutsIntoOpsList();
   }));
 
   $$('[data-jump-op]').forEach(tag => tag.addEventListener('click', (e) => {
@@ -4073,6 +4089,7 @@ function updateCalloutMessageTemplate(force){
   let newMsg;
   if(calloutMode === 'standby') newMsg = `SRT STANDBY${type?': '+type:''}. Do not respond yet — stand by for further instructions.${rally?' Rally point if activated: '+rally+'.':''}`;
   else if(calloutMode === 'deploy') newMsg = `SRT DEPLOY${type?': '+type:''}. Report to ${rally||'rally point'} ASAP.${loc?' Scene: '+loc+'.':''}`;
+  else if(calloutMode === 'standdown') newMsg = `SRT STAND DOWN${type?': '+type:''}. Return to normal status. Do not respond.${loc?' Last scene: '+loc+'.':''}`;
   else newMsg = `SRT ACTIVATION${type?': '+type:''}. Report to ${loc||'staging'} ASAP. Await further instructions.`;
   calloutAutoMessage = newMsg;
   $('#calloutMessage').value = newMsg;
@@ -4084,7 +4101,7 @@ $('#cancelNewCallout') && $('#cancelNewCallout').addEventListener('click', close
 
 async function finalizeCallout(method){
   if(calloutSelectedIds.size === 0){ alert('Select at least one team member.'); return null; }
-  if(!calloutMode){ alert('Select Standby Only or Deploy.'); return null; }
+  if(!calloutMode){ alert('Select Standby Only, Deploy, or Stand Down.'); return null; }
   const message = $('#calloutMessage').value.trim();
   if(!message){ alert('Enter a message.'); return null; }
 
@@ -4118,7 +4135,7 @@ async function finalizeCallout(method){
   if(callout){
     await supabaseClient.from('callout_recipients').insert([...calloutSelectedIds].map(id => ({ callout_id: callout.id, member_id: id, ack:'pending' })));
     fireCalloutAlert({
-      title: ((callout.mode==='deploy'?'DEPLOY':callout.mode==='standby'?'STANDBY':'CALLOUT')) + (callout.type ? ' — '+callout.type : ''),
+      title: calloutAlertTitle(callout.mode, callout.type),
       body: callout.message || callout.location || 'New activation'
     });
   }
@@ -4288,7 +4305,7 @@ $('#eCoSave').addEventListener('click', async () => {
   };
   await supabaseClient.from('callouts').update(payload).eq('id', editingCalloutId);
   fireCalloutAlert({
-    title: 'UPDATED ' + (eCoModeVal === 'deploy' ? 'DEPLOY' : eCoModeVal === 'standby' ? 'STANDBY' : 'CALLOUT') + (payload.type ? ' — ' + payload.type : ''),
+    title: 'UPDATED ' + calloutAlertTitle(eCoModeVal, payload.type),
     body: payload.message || payload.location || 'Callout updated'
   });
   $('#editCalloutSheet').classList.remove('active');
