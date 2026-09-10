@@ -1818,7 +1818,8 @@ async function loadOpAssets(operationId, editable){
 const OPS_LOG_TAGS = [
   'Note', 'Decision', 'Movement', 'Entry / Breach',
   'Suspect Contact', 'Suspect Custody', 'Use of Force', 'Shots Fired',
-  'Injury', 'Medical', 'Equipment', 'Command'
+  'Injury', 'Medical', 'Equipment', 'Command',
+  'Flash Bang', 'Gas', 'Throw Phone', 'Drone'
 ];
 
 const OPS_QUICK_ACTIONS = [
@@ -1831,6 +1832,10 @@ const OPS_QUICK_ACTIONS = [
   { label: 'Injury – Suspect', tag: 'Injury', text: 'Suspect injury' },
   { label: 'Injury – Team', tag: 'Injury', text: 'Team member injury' },
   { label: 'Medical', tag: 'Medical', text: 'Medical activated' },
+  { label: 'Flash Bang', tag: 'Flash Bang', text: 'Flash bang deployed' },
+  { label: 'Gas Deployed', tag: 'Gas', text: 'Gas deployed' },
+  { label: 'Throw Phone', tag: 'Throw Phone', text: 'Throw phone deployed' },
+  { label: 'Interior Drone', tag: 'Drone', text: 'Interior drone made entry' },
   { label: 'All Clear', tag: 'Note', text: 'All clear / scene secure' },
 ];
 
