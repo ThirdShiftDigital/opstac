@@ -77,6 +77,47 @@ $('#loginForm').addEventListener('submit', async (e) => {
     btn.textContent = 'Sign In';
     return;
   }
+
+  const { data: factorsData } = await supabaseClient.auth.mfa.listFactors();
+  const verifiedFactor = factorsData ? (factorsData.totp || []).find(f => f.status === 'verified') : null;
+  if(verifiedFactor){
+    pendingMfaFactorId = verifiedFactor.id;
+    btn.disabled = false; btn.textContent = 'Sign In';
+    $('#loginScreen').style.display = 'none';
+    $('#mfaChallengeScreen').style.display = 'flex';
+    return;
+  }
+
+  await onSignedIn();
+});
+
+let pendingMfaFactorId = null;
+$('#mfaChallengeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#mfaChallengeBtn');
+  const errorBox = $('#mfaChallengeError');
+  errorBox.style.display = 'none';
+  const code = $('#mfaChallengeCode').value.trim();
+  if(!/^\d{6}$/.test(code)){ errorBox.textContent = 'Enter the 6-digit code from your authenticator app.'; errorBox.style.display = 'block'; return; }
+
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  const { data: challenge, error: challengeError } = await supabaseClient.auth.mfa.challenge({ factorId: pendingMfaFactorId });
+  if(challengeError){
+    errorBox.textContent = challengeError.message;
+    errorBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Verify';
+    return;
+  }
+  const { error: verifyError } = await supabaseClient.auth.mfa.verify({ factorId: pendingMfaFactorId, challengeId: challenge.id, code });
+  btn.disabled = false; btn.textContent = 'Verify';
+  if(verifyError){
+    errorBox.textContent = 'Incorrect code. Please try again.';
+    errorBox.style.display = 'block';
+    $('#mfaChallengeCode').value = '';
+    return;
+  }
+  $('#mfaChallengeScreen').style.display = 'none';
+  pendingMfaFactorId = null;
   await onSignedIn();
 });
 
@@ -1834,12 +1875,14 @@ async function openNewCalloutModal(lockedOp){
 
 // ---------- Settings ----------
 async function loadSettings(){
-  const [{ data: settings }, { data: agency }] = await Promise.all([
+  const [{ data: settings }, { data: agency }, { data: mfaData }] = await Promise.all([
     supabaseClient.from('agency_settings').select('*').eq('agency_id', currentProfile.agency_id).single(),
     supabaseClient.from('agencies').select('name, agency_code').eq('id', currentProfile.agency_id).single(),
+    supabaseClient.auth.mfa.listFactors(),
   ]);
   currentSettings = settings;
   const isCommander = currentProfile.role === 'commander';
+  const totpFactor = mfaData ? (mfaData.totp || []).find(f => f.status === 'verified') : null;
 
   $('#settingsWrap').innerHTML = `
     <div class="settings-group">
@@ -1857,6 +1900,29 @@ async function loadSettings(){
       <div class="field-group"><label class="field-label">New Password</label><input type="password" id="newPasswordField"></div>
       <div class="field-group"><label class="field-label">Confirm New Password</label><input type="password" id="confirmPasswordField"></div>
       <button class="btn btn-primary" id="changePasswordBtn">Update Password</button>
+    </div>
+    <div class="settings-group">
+      <div class="settings-group-title">Two-Factor Authentication</div>
+      <div id="twoFactorStatus">
+        ${totpFactor ? `
+          <div style="font-size:12.5px; color:var(--good); margin-bottom:12px;">✓ Two-factor authentication is enabled.</div>
+          <button class="btn btn-danger-outline" id="disable2faBtn">Disable Two-Factor Authentication</button>
+        ` : `
+          <div style="font-size:12.5px; color:var(--text-dim); line-height:1.6; margin-bottom:12px;">
+            Add an extra layer of security — after your password, you'll also need a code from an authenticator app (like Google Authenticator or Authy) to sign in.
+          </div>
+          <button class="btn btn-primary" id="enable2faBtn">Enable Two-Factor Authentication</button>
+        `}
+      </div>
+      <div id="twoFactorEnrollFlow" style="display:none; margin-top:16px;">
+        <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Scan this QR code with your authenticator app, then enter the 6-digit code it generates.</div>
+        <div id="totpQrCode" style="text-align:center; margin-bottom:14px;"></div>
+        <div style="font-size:11px; color:var(--text-dim); text-align:center; margin-bottom:14px; word-break:break-all;" id="totpManualSecret"></div>
+        <div class="error-box" id="totpVerifyError" style="display:none;"></div>
+        <div class="field-group"><label class="field-label">6-Digit Code</label><input type="text" id="totpVerifyCode" maxlength="6" inputmode="numeric" style="text-align:center; font-size:20px; letter-spacing:4px;"></div>
+        <button class="btn btn-primary" id="totpVerifyBtn" style="width:100%;">Verify & Enable</button>
+        <button class="btn btn-ghost" id="totpCancelBtn" style="width:100%; margin-top:8px;">Cancel</button>
+      </div>
     </div>
     <div class="settings-group">
       <div class="settings-group-title">Team Leader Permissions</div>
@@ -1916,6 +1982,63 @@ async function loadSettings(){
     $('#confirmPasswordField').value = '';
     successBox.textContent = 'Password updated.';
     successBox.style.display = 'block';
+  });
+
+  let pendingFactorId = null;
+
+  const enable2faBtn = $('#enable2faBtn');
+  if(enable2faBtn) enable2faBtn.addEventListener('click', async () => {
+    enable2faBtn.disabled = true; enable2faBtn.textContent = 'Preparing...';
+    const { data, error } = await supabaseClient.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'OpsTac' });
+    enable2faBtn.disabled = false; enable2faBtn.textContent = 'Enable Two-Factor Authentication';
+    if(error){ alert('Could not start 2FA setup: ' + error.message); return; }
+    pendingFactorId = data.id;
+    $('#totpQrCode').innerHTML = `<img src="${data.totp.qr_code}" style="width:200px; height:200px; background:#fff; border-radius:6px; padding:8px;">`;
+    $('#totpManualSecret').textContent = `Can't scan? Enter this code manually: ${data.totp.secret}`;
+    $('#totpVerifyCode').value = '';
+    $('#totpVerifyError').style.display = 'none';
+    $('#twoFactorStatus').style.display = 'none';
+    $('#twoFactorEnrollFlow').style.display = 'block';
+  });
+
+  $('#totpCancelBtn') && $('#totpCancelBtn').addEventListener('click', async () => {
+    if(pendingFactorId){ await supabaseClient.auth.mfa.unenroll({ factorId: pendingFactorId }); }
+    pendingFactorId = null;
+    loadSettings();
+  });
+
+  $('#totpVerifyBtn') && $('#totpVerifyBtn').addEventListener('click', async () => {
+    const code = $('#totpVerifyCode').value.trim();
+    const errorBox = $('#totpVerifyError');
+    errorBox.style.display = 'none';
+    if(!/^\d{6}$/.test(code)){ errorBox.textContent = 'Enter the 6-digit code from your authenticator app.'; errorBox.style.display = 'block'; return; }
+
+    const btn = $('#totpVerifyBtn');
+    btn.disabled = true; btn.textContent = 'Verifying...';
+    const { data: challenge, error: challengeError } = await supabaseClient.auth.mfa.challenge({ factorId: pendingFactorId });
+    if(challengeError){
+      errorBox.textContent = challengeError.message;
+      errorBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Verify & Enable';
+      return;
+    }
+    const { error: verifyError } = await supabaseClient.auth.mfa.verify({ factorId: pendingFactorId, challengeId: challenge.id, code });
+    btn.disabled = false; btn.textContent = 'Verify & Enable';
+    if(verifyError){
+      errorBox.textContent = 'Incorrect code. Please try again.';
+      errorBox.style.display = 'block';
+      return;
+    }
+    pendingFactorId = null;
+    loadSettings();
+  });
+
+  $('#disable2faBtn') && $('#disable2faBtn').addEventListener('click', async () => {
+    if(!confirm('Disable two-factor authentication? Your account will only require a password to sign in.')) return;
+    const { data: factorsData } = await supabaseClient.auth.mfa.listFactors();
+    const factor = (factorsData.totp || []).find(f => f.status === 'verified');
+    if(factor){ await supabaseClient.auth.mfa.unenroll({ factorId: factor.id }); }
+    loadSettings();
   });
 
   if(!isCommander){

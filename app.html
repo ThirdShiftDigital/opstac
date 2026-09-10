@@ -609,6 +609,21 @@
   </div>
 </div>
 
+<div id="mfaChallengeScreen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
+  <div style="width:100%; max-width:380px;">
+    <img src="logo.png" alt="OpsTac" style="display:block; height:28px; margin:0 auto 20px;">
+    <div style="font-size:12.5px; color:var(--text-dim); text-align:center; margin-bottom:20px;">Enter the 6-digit code from your authenticator app.</div>
+    <div class="error-box" id="mfaChallengeError" style="display:none; background:var(--bad-bg); border:1px solid var(--bad); color:#e8a89f; border-radius:6px; padding:11px 13px; font-size:13px; margin-bottom:16px;"></div>
+    <form id="mfaChallengeForm">
+      <div class="field-group">
+        <label class="field-label">Authentication Code</label>
+        <input type="text" id="mfaChallengeCode" class="field-input" maxlength="6" inputmode="numeric" autocomplete="one-time-code" style="text-align:center; font-size:22px; letter-spacing:6px;" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="mfaChallengeBtn" style="margin-top:6px;">Verify</button>
+    </form>
+  </div>
+</div>
+
 <div class="phone" id="appShell" style="display:none;">
 
   <div class="topbar">
@@ -774,6 +789,20 @@
         <div class="field-group"><label class="field-label">New Password</label><input type="password" id="newPasswordField" class="field-input"></div>
         <div class="field-group"><label class="field-label">Confirm New Password</label><input type="password" id="confirmPasswordField" class="field-input"></div>
         <button class="btn btn-primary btn-block" id="changePasswordBtn">Update Password</button>
+      </div>
+
+      <div class="more-group-title">Two-Factor Authentication</div>
+      <div style="padding:0 18px 18px;">
+        <div id="twoFactorStatus"></div>
+        <div id="twoFactorEnrollFlow" style="display:none; margin-top:12px;">
+          <div style="font-size:12px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;">Scan this QR code with your authenticator app, then enter the 6-digit code it generates.</div>
+          <div id="totpQrCode" style="text-align:center; margin-bottom:14px;"></div>
+          <div style="font-size:10.5px; color:var(--text-dim); text-align:center; margin-bottom:14px; word-break:break-all;" id="totpManualSecret"></div>
+          <div class="error-box" id="totpVerifyError" style="display:none; background:var(--bad-bg); border:1px solid var(--bad); color:#e8a89f; border-radius:6px; padding:11px 13px; font-size:13px; margin-bottom:12px;"></div>
+          <div class="field-group"><label class="field-label">6-Digit Code</label><input type="text" id="totpVerifyCode" class="field-input" maxlength="6" inputmode="numeric" style="text-align:center; font-size:20px; letter-spacing:4px;"></div>
+          <button class="btn btn-primary btn-block" id="totpVerifyBtn">Verify & Enable</button>
+          <button class="btn btn-block" id="totpCancelBtn" style="margin-top:8px;">Cancel</button>
+        </div>
       </div>
 
       <div class="more-group-title">Modules</div>

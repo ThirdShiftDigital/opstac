@@ -287,6 +287,22 @@
   </div>
 </div>
 
+<!-- MFA CHALLENGE (returning login with 2FA enabled) -->
+<div id="mfaChallengeScreen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px;">
+  <div class="login-card">
+    <img src="logo.png" alt="OpsTac" class="login-logo">
+    <p style="font-size:12.5px; color:var(--text-dim); text-align:center; margin-bottom:20px;">Enter the 6-digit code from your authenticator app.</p>
+    <div class="error-box" id="mfaChallengeError" style="display:none;"></div>
+    <form id="mfaChallengeForm">
+      <div class="field-group">
+        <label class="field-label">Authentication Code</label>
+        <input type="text" id="mfaChallengeCode" maxlength="6" inputmode="numeric" autocomplete="one-time-code" style="text-align:center; font-size:22px; letter-spacing:6px;" required>
+      </div>
+      <button type="submit" class="btn btn-primary" id="mfaChallengeBtn">Verify</button>
+    </form>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="appShell">
   <aside class="sidebar">

@@ -86,6 +86,17 @@ $('#loginForm').addEventListener('submit', async (e) => {
     btn.textContent = 'Sign In';
     return;
   }
+
+  const { data: factorsData } = await supabaseClient.auth.mfa.listFactors();
+  const verifiedFactor = factorsData ? (factorsData.totp || []).find(f => f.status === 'verified') : null;
+  if(verifiedFactor){
+    pendingMfaFactorId = verifiedFactor.id;
+    btn.disabled = false; btn.textContent = 'Sign In';
+    $('#loginScreen').style.display = 'none';
+    $('#mfaChallengeScreen').style.display = 'flex';
+    return;
+  }
+
   await onSignedIn();
 });
 
@@ -1946,6 +1957,7 @@ $('#eCoSave').addEventListener('click', async () => {
 // ---------- Settings ----------
 function renderPermissionsSettings(){
   if(currentAgency) $('#agencyCodeDisplay').textContent = currentAgency.agency_code || '—';
+  loadTwoFactorStatus();
   const isCommander = currentProfile && currentProfile.role === 'commander';
   $('#permissionsSettingsGroup').style.display = isCommander ? 'block' : 'none';
   if(!currentSettings) return;
@@ -2024,6 +2036,112 @@ $('#changePasswordBtn').addEventListener('click', async () => {
   $('#confirmPasswordField').value = '';
   successBox.textContent = 'Password updated.';
   successBox.style.display = 'block';
+});
+
+let pendingFactorId = null;
+
+async function loadTwoFactorStatus(){
+  if(!currentProfile) return;
+  const { data: mfaData } = await supabaseClient.auth.mfa.listFactors();
+  const totpFactor = mfaData ? (mfaData.totp || []).find(f => f.status === 'verified') : null;
+  const statusEl = $('#twoFactorStatus');
+  if(!statusEl) return;
+  statusEl.innerHTML = totpFactor ? `
+    <div style="font-size:12px; color:var(--good); margin-bottom:12px;">✓ Two-factor authentication is enabled.</div>
+    <button class="btn btn-block" id="disable2faBtn" style="border:1px solid var(--bad); color:var(--bad); background:transparent;">Disable Two-Factor Authentication</button>
+  ` : `
+    <div style="font-size:12px; color:var(--text-dim); line-height:1.5; margin-bottom:12px;">
+      Add an extra layer of security — after your password, you'll also need a code from an authenticator app (like Google Authenticator or Authy) to sign in.
+    </div>
+    <button class="btn btn-primary btn-block" id="enable2faBtn">Enable Two-Factor Authentication</button>
+  `;
+  $('#twoFactorEnrollFlow').style.display = 'none';
+
+  const enableBtn = $('#enable2faBtn');
+  if(enableBtn) enableBtn.addEventListener('click', async () => {
+    enableBtn.disabled = true; enableBtn.textContent = 'Preparing...';
+    const { data, error } = await supabaseClient.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'OpsTac' });
+    enableBtn.disabled = false; enableBtn.textContent = 'Enable Two-Factor Authentication';
+    if(error){ alert('Could not start 2FA setup: ' + error.message); return; }
+    pendingFactorId = data.id;
+    $('#totpQrCode').innerHTML = `<img src="${data.totp.qr_code}" style="width:180px; height:180px; background:#fff; border-radius:6px; padding:8px;">`;
+    $('#totpManualSecret').textContent = `Can't scan? Enter this code manually: ${data.totp.secret}`;
+    $('#totpVerifyCode').value = '';
+    $('#totpVerifyError').style.display = 'none';
+    statusEl.style.display = 'none';
+    $('#twoFactorEnrollFlow').style.display = 'block';
+  });
+
+  const disableBtn = $('#disable2faBtn');
+  if(disableBtn) disableBtn.addEventListener('click', async () => {
+    if(!confirm('Disable two-factor authentication? Your account will only require a password to sign in.')) return;
+    const { data: factorsData } = await supabaseClient.auth.mfa.listFactors();
+    const factor = (factorsData.totp || []).find(f => f.status === 'verified');
+    if(factor){ await supabaseClient.auth.mfa.unenroll({ factorId: factor.id }); }
+    loadTwoFactorStatus();
+  });
+}
+
+$('#totpCancelBtn').addEventListener('click', async () => {
+  if(pendingFactorId){ await supabaseClient.auth.mfa.unenroll({ factorId: pendingFactorId }); }
+  pendingFactorId = null;
+  loadTwoFactorStatus();
+});
+
+$('#totpVerifyBtn').addEventListener('click', async () => {
+  const code = $('#totpVerifyCode').value.trim();
+  const errorBox = $('#totpVerifyError');
+  errorBox.style.display = 'none';
+  if(!/^\d{6}$/.test(code)){ errorBox.textContent = 'Enter the 6-digit code from your authenticator app.'; errorBox.style.display = 'block'; return; }
+
+  const btn = $('#totpVerifyBtn');
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  const { data: challenge, error: challengeError } = await supabaseClient.auth.mfa.challenge({ factorId: pendingFactorId });
+  if(challengeError){
+    errorBox.textContent = challengeError.message;
+    errorBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Verify & Enable';
+    return;
+  }
+  const { error: verifyError } = await supabaseClient.auth.mfa.verify({ factorId: pendingFactorId, challengeId: challenge.id, code });
+  btn.disabled = false; btn.textContent = 'Verify & Enable';
+  if(verifyError){
+    errorBox.textContent = 'Incorrect code. Please try again.';
+    errorBox.style.display = 'block';
+    return;
+  }
+  pendingFactorId = null;
+  loadTwoFactorStatus();
+});
+
+let pendingMfaFactorId = null;
+$('#mfaChallengeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#mfaChallengeBtn');
+  const errorBox = $('#mfaChallengeError');
+  errorBox.style.display = 'none';
+  const code = $('#mfaChallengeCode').value.trim();
+  if(!/^\d{6}$/.test(code)){ errorBox.textContent = 'Enter the 6-digit code from your authenticator app.'; errorBox.style.display = 'block'; return; }
+
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  const { data: challenge, error: challengeError } = await supabaseClient.auth.mfa.challenge({ factorId: pendingMfaFactorId });
+  if(challengeError){
+    errorBox.textContent = challengeError.message;
+    errorBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Verify';
+    return;
+  }
+  const { error: verifyError } = await supabaseClient.auth.mfa.verify({ factorId: pendingMfaFactorId, challengeId: challenge.id, code });
+  btn.disabled = false; btn.textContent = 'Verify';
+  if(verifyError){
+    errorBox.textContent = 'Incorrect code. Please try again.';
+    errorBox.style.display = 'block';
+    $('#mfaChallengeCode').value = '';
+    return;
+  }
+  $('#mfaChallengeScreen').style.display = 'none';
+  pendingMfaFactorId = null;
+  await onSignedIn();
 });
 
 checkExistingSession();
