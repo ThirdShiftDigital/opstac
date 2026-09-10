@@ -2138,12 +2138,17 @@ function renderPlan(op){
     $('#targetPhotoInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if(!file) return;
-      const path = `${currentProfile.agency_id}/${currentOpId}/photos/${Date.now()}-${file.name}`;
-      const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file);
+      const safeName = String(file.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${currentProfile.agency_id}/${currentOpId}/photos/${Date.now()}-${safeName}`;
+      const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, {
+        upsert: true,
+        contentType: file.type || 'image/jpeg'
+      });
       if(error){ alert('Upload failed: ' + error.message); return; }
-      await supabaseClient.from('operation_photos').insert({
+      const { error: insErr } = await supabaseClient.from('operation_photos').insert({
         agency_id: currentProfile.agency_id, operation_id: op.id, storage_path: path,
       });
+      if(insErr){ alert('Saved the file but could not attach it to the plan: ' + insErr.message); }
       e.target.value = '';
       loadTargetPhotos(op.id, editable);
     });
@@ -2168,18 +2173,30 @@ function renderPlan(op){
   }
 }
 
+async function signedPhotoUrl(path){
+  if(!path) return '';
+  const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(path, 3600);
+  if(error){
+    console.error('signedPhotoUrl failed', { path, error });
+    return '';
+  }
+  return (data && (data.signedUrl || data.signedURL)) || '';
+}
 async function loadTargetPhotos(operationId, editable){
-  const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', operationId).order('created_at');
   const grid = $('#targetPhotosGrid');
   if(!grid) return;
+  let photosRes = await supabaseClient.from('operation_photos').select('*').eq('operation_id', operationId).order('created_at');
+  if(photosRes.error){
+    photosRes = await supabaseClient.from('operation_photos').select('*').eq('operation_id', operationId);
+  }
+  const photos = photosRes.data;
   if(!photos || photos.length === 0){
     grid.innerHTML = `<div style="font-size:12px; color:var(--text-dim);">No reference photos uploaded yet.</div>`;
     return;
   }
   const withUrls = await Promise.all(photos.map(async p => {
-    const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
-    if(error){ console.error('loadTargetPhotos: could not get signed URL', { path: p.storage_path, error }); return { ...p, url: '', failed: true }; }
-    return { ...p, url: data.signedUrl, failed: false };
+    const url = await signedPhotoUrl(p.storage_path);
+    return { ...p, url, failed: !url };
   }));
   grid.innerHTML = withUrls.map(p => `
     <div style="position:relative;">
