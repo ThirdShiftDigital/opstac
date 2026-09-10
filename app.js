@@ -13,7 +13,7 @@ let myPersonnel = null;      // this user's own personnel row, if linked
 let allPersonnel = [];
 let allSubteams = [];
 
-const UNIT_NAME_PRESETS = ['Negotiators', 'Delta', 'Entry', 'Perimeter', 'Overwatch', 'TEMS', 'Command'];
+const UNIT_NAME_PRESETS = ['Negotiators', 'Drone', 'Entry', 'Perimeter', 'Overwatch', 'TEMS', 'Command'];
 function fillNamePresets(containerId, inputId){
   const el = $('#' + containerId);
   if(!el) return;
@@ -1710,7 +1710,10 @@ function renderAttachedUnits(op, editable){
     const cmd = u.commander_personnel_id ? memberById(u.commander_personnel_id) : (team && team.leader_personnel_id ? memberById(team.leader_personnel_id) : null);
     return `<div class="stack-member-row">
       <div class="stack-ord">${idx+1}</div>
-      <div class="stack-member-name"><strong>${name}</strong>${cmd ? ' · ' + cmd.name : ' · No commander'}</div>
+      <div class="stack-member-name" style="flex:1;">
+        ${editable ? `<input class="field-input unit-rename" data-unit-idx="${idx}" value="${String(name).replace(/"/g,'&quot;')}" style="font-size:13px; padding:6px 8px;">` : `<strong>${name}</strong>`}
+        <div style="font-size:11px; color:var(--text-dim); margin-top:3px;">${cmd ? cmd.name : 'No commander'}</div>
+      </div>
       ${editable ? `<button type="button" class="stack-rem-btn" data-unit-idx="${idx}">×</button>` : ''}
     </div>`;
   }).join('') || `<div style="font-size:12.5px; color:var(--text-dim);">No specialty teams attached yet.</div>`;
@@ -1726,7 +1729,7 @@ function renderAttachedUnits(op, editable){
       <button type="button" class="btn btn-outline" id="attachExistingBtn" style="font-size:12px; padding:8px 12px;">Attach</button>
     </div>
     <div class="stack-add-row" style="flex-wrap:wrap; margin-top:8px;">
-      <input type="text" class="field-input" id="newUnitName" placeholder="Or create a name (Delta, Negotiators...)" style="flex:1; min-width:140px;">
+      <input type="text" class="field-input" id="newUnitName" placeholder="Or create a name (Drone, Negotiators...)" style="flex:1; min-width:140px;">
       <select class="field-input" id="newUnitCommander" style="flex:1; min-width:140px;">
         <option value="">Commander...</option>
         ${allPersonnel.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
@@ -1740,7 +1743,20 @@ function renderAttachedUnits(op, editable){
 
   fillNamePresets('newUnitPresets', 'newUnitName');
 
-  $$('[data-unit-idx]').forEach(btn => btn.addEventListener('click', async () => {
+  $$('.unit-rename').forEach(input => input.addEventListener('blur', async () => {
+    const idx = Number(input.dataset.unitIdx);
+    const name = input.value.trim();
+    if(!name) return;
+    const next = units.map((u, i) => i === idx ? { ...u, name } : u);
+    const unit = next[idx];
+    await saveAttachedUnits(next);
+    if(unit && unit.subteam_id){
+      await supabaseClient.from('subteams').update({ name }).eq('id', unit.subteam_id);
+      const st = allSubteams.find(t => t.id === unit.subteam_id);
+      if(st) st.name = name;
+    }
+  }));
+  $$('.stack-rem-btn[data-unit-idx]').forEach(btn => btn.addEventListener('click', async () => {
     const next = units.filter((_, i) => i !== Number(btn.dataset.unitIdx));
     await saveAttachedUnits(next);
     renderAttachedUnits(currentOpCache, true);
@@ -1814,7 +1830,7 @@ function renderPlan(op){
     <div class="field-group">
       <label class="field-label">Attached Teams</label>
       <div id="planUnitsBox"></div>
-      <div style="font-size:11.5px; color:var(--text-dim); margin-top:6px;">Attach Negotiators, Delta, Entry, or create a name. Each team can have its own commander.</div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin-top:6px;">Attach Negotiators, Drone, Entry, or create a name. Tap a name to change it.</div>
     </div>
     <div class="field-group">
       <label class="field-label">Assignments &amp; Stacks</label>
