@@ -1359,9 +1359,8 @@ if(!window._mapClickBound){
         s.id === selectedStackId ? { ...s, x: clampedX, y: clampedY } : s
       );
       await saveMapStacks(stacks);
-      selectedStackId = null;
       renderStacks(currentOpCache);
-      $('#mapHint').textContent = 'Place individuals for perimeter/command. Use a stack for entry teams.';
+      $('#mapHint').textContent = 'Stack moved. Tap map again to move, or tap the stack chip to deselect.';
       return;
     }
 
@@ -1428,6 +1427,33 @@ function renderStacks(op){
   const editable = canEditOps();
   const tb = $('#mapToolbar');
   if(tb) tb.style.display = editable ? 'flex' : 'none';
+
+  const palette = $('#stackPalette');
+  if(palette){
+    palette.innerHTML = stacks.map(st => {
+      const count = (st.members || []).length;
+      return `<div class="stack-chip ${selectedStackId===st.id?'selected':''}" data-stack-id="${st.id}">
+        <div class="stack-chip-name">${st.name || 'Stack'}</div>
+        <div class="stack-chip-meta">${count} operator${count===1?'':'s'} · tap to select</div>
+      </div>`;
+    }).join('');
+    $$('#stackPalette .stack-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(!editable) return;
+        const id = chip.dataset.stackId;
+        selectedStackId = selectedStackId === id ? null : id;
+        selectedPinMemberId = null;
+        armedOperatorId = null;
+        placingStack = false;
+        renderStacks(currentOpCache);
+        renderMapPalette(currentOpCache, currentOperatorsCache);
+        $('#mapHint').textContent = selectedStackId
+          ? 'Stack selected. Tap the map to move it, or edit members below.'
+          : 'Place individuals for perimeter/command. Use a stack for entry teams.';
+      });
+    });
+  }
 
   stacks.forEach(st => {
     const pin = document.createElement('div');
