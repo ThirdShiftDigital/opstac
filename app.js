@@ -696,6 +696,45 @@ function populateSubteamSelect(existing){
 let editingMemberId = null;
 let mMemberOnCallVal = false;
 
+
+async function savePersonnelRecord(id, payload, isInsert){
+  const mark = (payload.callsign || payload.unit_number || '').trim() || null;
+  const tryPayloads = [
+    payload,
+    { ...payload, callsign: mark, unit_number: undefined },
+    { ...payload, unit_number: mark, callsign: undefined },
+    { ...payload, unit: mark, callsign: undefined, unit_number: undefined },
+  ];
+  const strip = obj => {
+    const out = {};
+    Object.keys(obj).forEach(k => { if(obj[k] !== undefined) out[k] = obj[k]; });
+    return out;
+  };
+  let lastErr = null;
+  for(const raw of tryPayloads){
+    const p = strip(raw);
+    const q = isInsert
+      ? await supabaseClient.from('personnel').insert(p).select().single()
+      : await supabaseClient.from('personnel').update(p).eq('id', id).select().single();
+    if(!q.error) return q;
+    lastErr = q.error;
+  }
+  // Last resort: core columns only, keep mark in memory
+  const { callsign, unit_number, unit, ...core } = payload;
+  const q = isInsert
+    ? await supabaseClient.from('personnel').insert(strip(core)).select().single()
+    : await supabaseClient.from('personnel').update(strip(core)).eq('id', id).select().single();
+  if(q.data && mark){
+    q.data.callsign = mark;
+    q.data.unit_number = mark;
+    const row = allPersonnel.find(p => p.id === (q.data.id || id));
+    if(row){ row.callsign = mark; row.unit_number = mark; }
+    console.warn('callsign columns missing; saved other fields only', lastErr);
+    alert('Callsign / unit # needs a column in Supabase. Run:\n\nALTER TABLE personnel ADD COLUMN IF NOT EXISTS callsign text;\nALTER TABLE personnel ADD COLUMN IF NOT EXISTS unit_number text;\n\nThen save again.');
+  }
+  return q;
+}
+
 function openMemberSheet(existing){
   editingMemberId = existing ? existing.id : null;
   $('#memberSheetTitle').textContent = existing ? 'Edit Operator' : 'Add Operator';
@@ -754,14 +793,14 @@ $('#mMemberSave').addEventListener('click', async () => {
     on_call: mMemberOnCallVal,
   };
   if(editingMemberId){
-    await supabaseClient.from('personnel').update(payload).eq('id', editingMemberId);
+    const { error } = await savePersonnelRecord(editingMemberId, payload, false);
+    if(error) console.warn('personnel update', error);
     $('#memberSheet').classList.remove('active');
     loadRoster();
     return;
   }
 
-  const { data: created } = await supabaseClient.from('personnel')
-    .insert({ agency_id: currentProfile.agency_id, ...payload }).select().single();
+  const { data: created } = await savePersonnelRecord(null, { agency_id: currentProfile.agency_id, ...payload }, true);
 
   const inviteEmail = $('#mMemberInviteEmail') ? $('#mMemberInviteEmail').value.trim() : '';
   if(!inviteEmail || !created){
