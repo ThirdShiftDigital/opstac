@@ -394,6 +394,17 @@
     color: var(--text-dim); background: var(--bg-panel); border:1px solid var(--line); border-radius: var(--radius-sm);
     cursor:pointer; letter-spacing:0.01em;
   }
+
+  .op-chat-wrap{ display:flex; flex-direction:column; height: min(62vh, 520px); }
+  .op-chat-list{ flex:1; overflow-y:auto; padding: 8px 2px 12px; display:flex; flex-direction:column; gap:8px; }
+  .op-chat-empty{ font-size:13px; color:var(--text-dim); text-align:center; padding:28px 12px; }
+  .op-chat-msg{ background:var(--bg-panel); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .op-chat-msg.mine{ border-color: var(--olive); }
+  .op-chat-meta{ font-size:10px; color:var(--text-dim); display:flex; justify-content:space-between; gap:8px; margin-bottom:4px; }
+  .op-chat-body{ font-size:13.5px; line-height:1.4; color:var(--text); white-space:pre-wrap; }
+  .op-chat-pin{ background:none; border:none; color:var(--olive-bright); font-size:11px; font-weight:700; cursor:pointer; padding:0; }
+  .op-chat-compose{ display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--line); }
+  .op-chat-compose .field-input{ flex:1; }
   .subtab.active{ background: var(--olive); color:#0c0e0c; border-color: var(--olive); }
   .subpanel{ display:none; padding: 16px 18px 10px; }
   .subpanel.active{ display:block; }
@@ -888,6 +899,7 @@
         <div class="subtab-row" id="opSubtabRow">
           <div class="subtab active" data-subtab="map">Map</div>
           <div class="subtab" data-subtab="plan">Pre-Ops Plan</div>
+          <div class="subtab" data-subtab="chat">Chat</div>
           <div class="subtab" data-subtab="log">Ops Log</div>
           <div class="subtab" data-subtab="debrief">Debrief</div>
           <div class="subtab" data-subtab="callouts">Callouts</div>
@@ -919,6 +931,9 @@
           <div id="planFields"></div>
         </div>
 
+        <div class="subpanel" id="opPanel-chat">
+          <div id="opChatContent"></div>
+        </div>
         <div class="subpanel" id="opPanel-log">
           <div id="opsLogContent"></div>
         </div>

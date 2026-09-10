@@ -1146,6 +1146,7 @@ async function openOpDetail(opId){
   updateFab('operations');
 }
 $('#opBackBtn').addEventListener('click', () => {
+  stopOpChat();
   opsView = 'list';
   $('#opsDetailView').style.display = 'none';
   $('#opsListView').style.display = 'block';
@@ -1157,10 +1158,124 @@ $$('.subtab').forEach(tab => tab.addEventListener('click', () => {
   $$('.subpanel').forEach(p => p.classList.toggle('active', p.id === `opPanel-${tab.dataset.subtab}`));
   if(tab.dataset.subtab === 'callouts' && currentOpId) renderOpCallouts(currentOpId);
   if(tab.dataset.subtab === 'log' && currentOpCache) renderOpsLog(currentOpCache);
+  if(tab.dataset.subtab === 'chat' && currentOpId) loadOpChat();
 }));
 $('#opCalloutBtn') && $('#opCalloutBtn').addEventListener('click', () => {
   if(currentOpCache) openCalloutSheet({ id: currentOpCache.id, name: currentOpCache.name });
 });
+
+let opChatChannel = null;
+let opChatRows = [];
+
+function stopOpChat(){
+  if(opChatChannel){
+    try { supabaseClient.removeChannel(opChatChannel); } catch(e){}
+    opChatChannel = null;
+  }
+}
+
+function renderOpChatList(){
+  const el = $('#opChatContent');
+  if(!el) return;
+  const canPin = canEditOps();
+  const myName = (currentProfile && currentProfile.full_name) || '';
+  const list = opChatRows.length
+    ? opChatRows.map(m => {
+        const t = new Date(m.created_at);
+        const time = isNaN(t) ? '' : t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        const mine = myName && m.author_name === myName;
+        return `<div class="op-chat-msg ${mine?'mine':''}">
+          <div class="op-chat-meta">
+            <span>${m.author_name || 'Operator'} · ${time}</span>
+            ${canPin ? `<button type="button" class="op-chat-pin" data-pin-chat="${m.id}">Pin to Log</button>` : ''}
+          </div>
+          <div class="op-chat-body">${String(m.body||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</div>
+        </div>`;
+      }).join('')
+    : `<div class="op-chat-empty">No messages yet. This room is for this operation only.</div>`;
+  el.innerHTML = `
+    <div class="op-chat-wrap">
+      <div class="op-chat-list" id="opChatList">${list}</div>
+      <div class="op-chat-compose">
+        <input type="text" class="field-input" id="opChatInput" placeholder="Message this operation..." autocomplete="off">
+        <button type="button" class="btn btn-primary" id="opChatSend">Send</button>
+      </div>
+    </div>`;
+  const listEl = $('#opChatList');
+  if(listEl) listEl.scrollTop = listEl.scrollHeight;
+  const send = async () => {
+    const input = $('#opChatInput');
+    const body = (input && input.value || '').trim();
+    if(!body || !currentOpId) return;
+    const row = {
+      agency_id: currentProfile.agency_id,
+      operation_id: currentOpId,
+      author_name: (currentProfile && currentProfile.full_name) || 'Operator',
+      author_user_id: currentProfile && currentProfile.id || null,
+      body
+    };
+    const { data, error } = await supabaseClient.from('operation_messages').insert(row).select().single();
+    if(error){
+      alert('Chat needs this table in Supabase:\n\nCREATE TABLE operation_messages (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  agency_id uuid,\n  operation_id uuid NOT NULL,\n  author_name text,\n  author_user_id uuid,\n  body text NOT NULL,\n  created_at timestamptz DEFAULT now()\n);\n\nThen enable Realtime on that table.\n\n' + error.message);
+      return;
+    }
+    if(data && !opChatRows.find(m => m.id === data.id)){
+      opChatRows.push(data);
+      renderOpChatList();
+      const again = $('#opChatInput');
+      if(again) again.focus();
+      return;
+    }
+    if(input) input.value = '';
+    const again = $('#opChatInput');
+    if(again) again.focus();
+  };
+  $('#opChatSend') && $('#opChatSend').addEventListener('click', send);
+  $('#opChatInput') && $('#opChatInput').addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  $$('[data-pin-chat]').forEach(btn => btn.addEventListener('click', async () => {
+    const msg = opChatRows.find(m => String(m.id) === String(btn.dataset.pinChat));
+    if(!msg) return;
+    await addOpsLogEntry({ tag: 'Command', text: `Chat — ${msg.author_name}: ${msg.body}`, critical: false });
+    btn.textContent = 'Pinned';
+  }));
+}
+
+async function loadOpChat(){
+  if(!currentOpId) return;
+  const { data, error } = await supabaseClient.from('operation_messages')
+    .select('*').eq('operation_id', currentOpId).order('created_at', { ascending: true }).limit(200);
+  if(error){
+    opChatRows = [];
+    renderOpChatList();
+    const el = $('#opChatContent');
+    if(el){
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:12px;color:var(--text-dim);padding:0 2px 10px;';
+      note.textContent = 'Create the operation_messages table in Supabase to turn chat on. SQL is in the send error if you try a message.';
+      el.prepend(note);
+    }
+  } else {
+    opChatRows = data || [];
+    renderOpChatList();
+  }
+  stopOpChat();
+  try {
+    opChatChannel = supabaseClient.channel('op-chat-' + currentOpId)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'operation_messages',
+        filter: 'operation_id=eq.' + currentOpId
+      }, payload => {
+        if(!payload.new) return;
+        if(opChatRows.find(m => m.id === payload.new.id)) return;
+        opChatRows.push(payload.new);
+        renderOpChatList();
+      })
+      .subscribe();
+  } catch(e){ console.warn('chat realtime unavailable', e); }
+}
+
 async function renderOpCallouts(opId){
   $('#opCalloutsContent').innerHTML = `<div class="loading-state" style="padding:30px; text-align:center; color:var(--text-dim);">Loading...</div>`;
   const { data: callouts } = await supabaseClient.from('callouts').select('*, callout_recipients(*)').eq('operation_id', opId).order('created_at', { ascending:false });
