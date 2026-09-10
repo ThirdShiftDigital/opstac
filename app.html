@@ -613,7 +613,7 @@
   
   .map-toolbar{ display:flex; gap:8px; align-items:center; padding: 0 0 8px; }
   #stackPalette{ display:none; }
-  #newStackBtn, #checkInBtn{ font-size:11px; padding:5px 10px; }
+  #newStackBtn, #checkInBtn, #geoJsonBtn{ font-size:11px; padding:5px 10px; }
   .map-rotate-bar{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-dim); padding:0 0 8px; }
   .map-rotate-bar input{ flex:1; accent-color: var(--olive); }
   .map-loc-pin[data-marker-type="vehicle"]{ border-color:#6b8f71; color:#b7d0b4; min-width:52px; }
@@ -913,6 +913,8 @@
           <div class="map-toolbar" id="mapToolbar">
             <button type="button" class="btn btn-outline" id="newStackBtn">+ Stack</button>
             <button type="button" class="btn btn-primary" id="checkInBtn">Check In</button>
+            <button type="button" class="btn btn-outline" id="geoJsonBtn">GeoJSON</button>
+            <input type="file" id="geoJsonInput" accept=".geojson,.json,application/geo+json,application/json" style="display:none;">
             <div class="map-hint" id="mapHint">Select, then tap the map.</div>
             <div class="stack-palette" id="stackPalette"></div>
           </div>

@@ -1146,6 +1146,9 @@ async function openOpDetail(opId){
     op.checkins = op.debrief._checkins;
   }
   if(op && !Array.isArray(op.checkins)) op.checkins = [];
+  if(op && !op.map_geojson && op.debrief && op.debrief._map_geojson){
+    op.map_geojson = op.debrief._map_geojson;
+  }
   renderOpDetail(op, operators || []);
   updateFab('operations');
 }
@@ -1339,6 +1342,7 @@ function renderOpDetail(op, operators){
   ensureLiveMap();
   focusOpOnLiveMap(op);
   rebuildLiveMarkers(op);
+  renderOpGeoJSON(op);
   renderCheckins(op);
   renderPlan(op);
   renderOpsLog(op);
@@ -1509,6 +1513,7 @@ const MAP_LOCATION_TYPES = [
 ];
 let liveMap = null;
 let liveLayer = null;
+let liveGeoLayer = null;
 let liveMapReady = false;
 
 function ensureLiveMap(){
@@ -1528,9 +1533,69 @@ function ensureLiveMap(){
   }).addTo(liveMap);
   liveMap.setView([36.208, -86.291], 17);
   liveLayer = L.layerGroup().addTo(liveMap);
+  liveGeoLayer = L.layerGroup().addTo(liveMap);
   liveMap.on('click', onLiveMapClick);
   liveMapReady = true;
   return liveMap;
+}
+
+
+function styleGeoFeature(feature){
+  const t = feature && feature.geometry && feature.geometry.type;
+  const props = (feature && feature.properties) || {};
+  if(t === 'Point' || t === 'MultiPoint'){
+    return { radius: 6, color: '#d4b86a', fillColor: '#b59a4d', fillOpacity: 0.9, weight: 1 };
+  }
+  return {
+    color: props.stroke || '#d4b86a',
+    weight: Number(props['stroke-width'] || 2),
+    opacity: 0.95,
+    fillColor: props.fill || '#b59a4d',
+    fillOpacity: t && t.indexOf('Polygon') >= 0 ? 0.18 : 0
+  };
+}
+function renderOpGeoJSON(op){
+  const map = ensureLiveMap();
+  if(!map) return;
+  if(liveGeoLayer) liveGeoLayer.clearLayers();
+  const gj = op && op.map_geojson;
+  if(!gj || !window.L) return;
+  try {
+    const layer = L.geoJSON(gj, {
+      style: styleGeoFeature,
+      pointToLayer: (feature, latlng) => L.circleMarker(latlng, styleGeoFeature(feature)),
+      onEachFeature: (feature, lyr) => {
+        const name = feature.properties && (feature.properties.name || feature.properties.title || feature.properties.label);
+        if(name) lyr.bindPopup(String(name));
+      }
+    });
+    layer.addTo(liveGeoLayer);
+    const b = layer.getBounds();
+    if(b && b.isValid()) map.fitBounds(b.pad(0.12));
+  } catch(e){ console.warn('GeoJSON render failed', e); }
+}
+async function saveOpGeoJSON(gj){
+  const { error } = await supabaseClient.from('operations').update({ map_geojson: gj }).eq('id', currentOpId);
+  if(error){
+    const debrief = { ...(currentOpCache.debrief || {}), _map_geojson: gj };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+  currentOpCache.map_geojson = gj;
+}
+async function importGeoJSONFile(file){
+  const text = await file.text();
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch(e){ alert('That file is not valid JSON.'); return; }
+  if(!parsed || (parsed.type !== 'FeatureCollection' && parsed.type !== 'Feature' && parsed.type !== 'GeometryCollection')){
+    alert('Need a GeoJSON Feature, FeatureCollection, or GeometryCollection.');
+    return;
+  }
+  await saveOpGeoJSON(parsed);
+  renderOpGeoJSON(currentOpCache);
+  const count = parsed.features ? parsed.features.length : 1;
+  $('#mapHint').textContent = 'Loaded GeoJSON (' + count + ' feature' + (count===1?'':'s') + ').';
 }
 
 async function geocodeAddress(q){
@@ -2017,6 +2082,12 @@ function renderMapPins(operators){
 
 // Re-bind map click (remove old listeners by cloning would be complex; replace handler body via flag)
 
+document.addEventListener('change', (e) => {
+  if(e.target && e.target.id === 'geoJsonInput' && e.target.files && e.target.files[0]){
+    importGeoJSONFile(e.target.files[0]);
+    e.target.value = '';
+  }
+});
 document.addEventListener('input', (e) => {
   if(e.target && e.target.id === 'mapRotateSlider'){
     const deg = document.getElementById('mapRotateDeg');
@@ -2029,6 +2100,11 @@ document.addEventListener('change', (e) => {
 document.addEventListener('click', (e) => {
   if(e.target && e.target.closest('#checkInBtn')){
     checkIntoCurrentOp();
+    return;
+  }
+  if(e.target && e.target.closest('#geoJsonBtn')){
+    const inp = document.getElementById('geoJsonInput');
+    if(inp) inp.click();
     return;
   }
   const btn = e.target.closest('#newStackBtn');
