@@ -1408,11 +1408,13 @@ async function applyMapRotation(rot){
     await saveMapStacks(next);
     renderStacks(currentOpCache);
   } else if(t.kind === 'pin'){
-    await supabaseClient.from('operation_operators').update({ rot }).eq('operation_id', currentOpId).eq('member_id', t.id);
-    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
-    currentOperatorsCache = refreshed || [];
+    const { error } = await supabaseClient.from('operation_operators').update({ rot }).eq('operation_id', currentOpId).eq('member_id', t.id);
+    if(!error){
+      currentOperatorsCache = (currentOperatorsCache||[]).map(o => o.member_id===t.id ? { ...o, rot } : o);
+    }
     renderMapPins(currentOperatorsCache);
   }
+  rebuildLiveMarkers(currentOpCache);
   refreshRotateBar();
 }
 
@@ -1627,10 +1629,11 @@ async function focusOpOnLiveMap(op){
   if(hit) map.setView([hit.lat, hit.lng], 18);
 }
 
-function liveIcon(label, color){
+function liveIcon(label, color, rot){
+  const deg = Number(rot||0);
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="background:#10120f;border:1.5px solid ${color||'#b59a4d'};color:${color||'#d4b86a'};padding:3px 6px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;transform:translate(-50%,-50%);">${label}</div>`,
+    html: `<div style="background:#10120f;border:1.5px solid ${color||'#b59a4d'};color:${color||'#d4b86a'};padding:3px 6px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;transform:translate(-50%,-50%) rotate(${deg}deg);">${label}</div>`,
     iconSize: [0,0],
     iconAnchor: [0,0]
   });
@@ -1645,7 +1648,7 @@ function rebuildLiveMarkers(op){
   (op.map_markers || []).forEach(mk => {
     if(mk.lat == null || mk.lng == null) return;
     const m = L.marker([mk.lat, mk.lng], {
-      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : '#d4b86a'),
+      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : '#d4b86a', mk.rot),
       draggable: editable,
       rotationAngle: Number(mk.rot||0)
     });
@@ -1661,7 +1664,7 @@ function rebuildLiveMarkers(op){
   (op.map_stacks || []).forEach(st => {
     if(st.lat == null || st.lng == null) return;
     const m = L.marker([st.lat, st.lng], {
-      icon: liveIcon(st.name || 'Stack', '#d4b86a'),
+      icon: liveIcon(st.name || 'Stack', '#d4b86a', st.rot),
       draggable: editable
     });
     m.on('click', (e) => { L.DomEvent.stop(e); selectedStackId = sid(st.id); selectedMarkerId = null; selectedPinMemberId = null; renderStackEditor(); refreshRotateBar && refreshRotateBar(); });
@@ -1678,7 +1681,7 @@ function rebuildLiveMarkers(op){
     const person = memberById(o.member_id);
     const label = person ? person.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
     const m = L.marker([o.lat, o.lng], {
-      icon: liveIcon((label + (o.role ? ' '+o.role : '')).trim(), '#facc15'),
+      icon: liveIcon((label + (o.role ? ' '+o.role : '')).trim(), '#facc15', o.rot),
       draggable: editable
     });
     m.on('click', (e) => { L.DomEvent.stop(e); selectedPinMemberId = o.member_id; selectedStackId = null; selectedMarkerId = null; refreshRotateBar && refreshRotateBar(); });
@@ -2092,6 +2095,7 @@ document.addEventListener('input', (e) => {
   if(e.target && e.target.id === 'mapRotateSlider'){
     const deg = document.getElementById('mapRotateDeg');
     if(deg) deg.textContent = e.target.value + '°';
+    applyMapRotation(e.target.value);
   }
 });
 document.addEventListener('change', (e) => {
