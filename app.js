@@ -3598,15 +3598,58 @@ async function generateOpPresentation(op){
     }
 
     if(opt.map !== false){
-      const mapData = await captureOpMapDataUrl(op);
       const slide = pres.addSlide();
       slide.background = { color: '0c0e0c' };
-      slide.addText('Map', { x: MARGIN, y: 0.2, fontSize: 22, bold: true, color: 'c7b482' });
-      if(mapData){
-        try { slide.addImage({ data: mapData, x: 0.4, y: 0.7, w: 9.2, h: 4.5 }); }
-        catch(imgErr){ slide.addText('Map image could not be embedded.', { x: MARGIN, y: 2.4, fontSize: 14, color: 'a89968' }); }
+      slide.addText('Placements', { x: MARGIN, y: 0.18, fontSize: 22, bold: true, color: 'c7b482' });
+      slide.addText(op.location || '', { x: MARGIN, y: 0.52, fontSize: 12, color: 'a89968' });
+      const items = [];
+      (op.map_markers || []).forEach(mk => items.push({
+        label: mk.label || mk.type || 'Mark',
+        kind: mk.type || 'mark',
+        lat: mk.lat, lng: mk.lng, x: mk.x, y: mk.y
+      }));
+      (op.map_stacks || []).forEach(st => items.push({
+        label: st.name || 'Entry',
+        kind: 'entry',
+        lat: st.lat, lng: st.lng, x: st.x, y: st.y
+      }));
+      (currentOperatorsCache || []).forEach(o => {
+        const m = memberById(o.member_id);
+        items.push({
+          label: operatorUnitLabel(m) + (o.role ? ' ' + o.role : ''),
+          kind: 'person',
+          lat: o.lat, lng: o.lng, x: o.x, y: o.y
+        });
+      });
+      const geo = items.filter(i => i.lat != null && i.lng != null);
+      const box = { x: 0.4, y: 0.85, w: 9.2, h: 4.3 };
+      slide.addShape(pres.ShapeType.rect, { x: box.x, y: box.y, w: box.w, h: box.h, fill: { color: '141814' }, line: { color: '2e3429', width: 1 } });
+      function posFor(it, idx){
+        if(geo.length >= 2 && it.lat != null){
+          const lats = geo.map(g => g.lat), lngs = geo.map(g => g.lng);
+          const minLa = Math.min(...lats), maxLa = Math.max(...lats);
+          const minLn = Math.min(...lngs), maxLn = Math.max(...lngs);
+          const dx = (maxLn - minLn) || 0.0001, dy = (maxLa - minLa) || 0.0001;
+          return {
+            x: box.x + 0.2 + ((it.lng - minLn) / dx) * (box.w - 1.2),
+            y: box.y + 0.2 + ((maxLa - it.lat) / dy) * (box.h - 0.8)
+          };
+        }
+        if(it.x != null && it.y != null){
+          return { x: box.x + (Number(it.x)/100) * (box.w - 0.8), y: box.y + (Number(it.y)/100) * (box.h - 0.5) };
+        }
+        const col = idx % 4, row = Math.floor(idx / 4);
+        return { x: box.x + 0.35 + col * 2.2, y: box.y + 0.4 + row * 0.7 };
+      }
+      const colorFor = kind => kind==='ems'||kind==='medic' ? 'c45c5c' : kind==='lz' ? '7ec8e3' : kind==='person' ? 'e4c35a' : kind==='entry' ? 'e4c35a' : kind==='vehicle' ? '8fbf88' : 'c7b482';
+      if(!items.length){
+        slide.addText('No placements yet.', { x: box.x + 0.3, y: box.y + 1.8, fontSize: 14, color: 'a89968' });
       } else {
-        slide.addText(op.location || 'Map could not be captured. Open the live map in the app.', { x: MARGIN, y: 2.4, w: W-MARGIN*2, fontSize: 16, color: 'a89968' });
+        items.forEach((it, idx) => {
+          const p = posFor(it, idx);
+          slide.addShape(pres.ShapeType.roundRect, { x: p.x, y: p.y, w: 1.15, h: 0.36, fill: { color: colorFor(it.kind) }, rectRadius: 0.04 });
+          slide.addText(String(it.label).slice(0,14), { x: p.x, y: p.y + 0.04, w: 1.15, h: 0.28, fontSize: 9, bold: true, color: '0c0e0c', align: 'center' });
+        });
       }
     }
 
