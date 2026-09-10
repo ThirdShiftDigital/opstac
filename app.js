@@ -1470,19 +1470,18 @@ function renderCheckins(op){
   if(!host) return;
   const rows = Array.isArray(op.checkins) ? op.checkins : [];
   if(!rows.length){
-    host.innerHTML = `<div style="font-size:12px;color:var(--text-dim);">No check-ins yet.</div>`;
+    host.innerHTML = '';
     return;
   }
-  host.innerHTML = rows.map(c => {
+  const details = rows.map(c => {
     const t = new Date(c.ts);
     const time = isNaN(t) ? '' : t.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
     const has = c.lat != null && c.lng != null;
     const loc = has ? `${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}` : 'No GPS';
-    const link = has ? ` <a href="${mapsLinkFor(c.lat,c.lng)}" target="_blank" rel="noopener" style="color:var(--olive-bright);">Open map</a>` : '';
-    return `<div class="stack-member-row" style="align-items:flex-start;">
-      <div class="stack-member-name"><strong>${c.name||'Operator'}</strong><div style="font-size:11px;color:var(--text-dim);">${time} · ${loc}${link}</div></div>
-    </div>`;
+    const link = has ? ` <a href="${mapsLinkFor(c.lat,c.lng)}" target="_blank" rel="noopener" style="color:var(--olive-bright);">Map</a>` : '';
+    return `<div style="font-size:12px; padding:6px 0; border-bottom:1px solid var(--line);"><strong>${c.name||'Operator'}</strong><div style="color:var(--text-dim);">${time} · ${loc} ${link}</div></div>`;
   }).join('');
+  host.innerHTML = `<details><summary style="cursor:pointer; font-size:12px; color:var(--text-dim);">${rows.length} check-in${rows.length===1?'':'s'}</summary>${details}</details>`;
 }
 
 async function checkIntoCurrentOp(){
@@ -1553,7 +1552,7 @@ function ensureLiveMap(){
     setTimeout(() => liveMap.invalidateSize(), 80);
     return liveMap;
   }
-  liveMap = L.map(el, { zoomControl: true, attributionControl: true });
+  liveMap = L.map(el, { zoomControl: true, attributionControl: false });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
     attribution: 'Tiles © Esri'
@@ -1714,6 +1713,7 @@ function rebuildLiveMarkers(op){
       draggable: editable,
       rotationAngle: Number(mk.rot||0)
     });
+    m.bindPopup(mk.label || mk.type || 'Mark');
     m.on('click', (e) => { L.DomEvent.stop(e); selectedMarkerId = sid(mk.id); selectedStackId = null; selectedPinMemberId = null; refreshRotateBar && refreshRotateBar(); });
     m.on('dragend', async () => {
       const p = m.getLatLng();
@@ -1729,6 +1729,7 @@ function rebuildLiveMarkers(op){
       icon: liveIcon(st.name || 'Stack', '#d4b86a', st.rot, 'stack'),
       draggable: editable
     });
+    m.bindPopup(st.name || 'Stack');
     m.on('click', (e) => { L.DomEvent.stop(e); selectedStackId = sid(st.id); selectedMarkerId = null; selectedPinMemberId = null; renderStackEditor(); refreshRotateBar && refreshRotateBar(); });
     m.on('dragend', async () => {
       const p = m.getLatLng();
@@ -1743,9 +1744,11 @@ function rebuildLiveMarkers(op){
     const person = memberById(o.member_id);
     const label = person ? person.name.split(' ').map(w=>w[0]).slice(-2).join('') : '?';
     const m = L.marker([o.lat, o.lng], {
-      icon: liveIcon((label + (o.role ? ' '+o.role : '')).trim(), '#facc15', o.rot, 'person'),
+      icon: liveIcon(label, '#facc15', o.rot, 'person'),
       draggable: editable
     });
+    const pname = person ? person.name : 'Operator';
+    m.bindPopup(pname + (o.role ? ' — ' + o.role : ''));
     m.on('click', (e) => { L.DomEvent.stop(e); selectedPinMemberId = o.member_id; selectedStackId = null; selectedMarkerId = null; refreshRotateBar && refreshRotateBar(); });
     m.on('dragend', async () => {
       const p = m.getLatLng();
@@ -1756,9 +1759,22 @@ function rebuildLiveMarkers(op){
     m.addTo(liveLayer);
   });
 
+  const plottedPeople = new Set((currentOperatorsCache||[]).map(o => {
+    const p = memberById(o.member_id);
+    return p && p.name;
+  }).filter(Boolean));
+  const latestCi = [];
+  const seen = new Set();
   (op.checkins || []).forEach(c => {
+    const key = c.personnel_id || c.name;
+    if(!key || seen.has(key)) return;
+    if(c.name && plottedPeople.has(c.name)) return;
     if(c.lat == null || c.lng == null) return;
-    L.marker([c.lat, c.lng], { icon: liveIcon((c.name||'CI').split(' ')[0] + ' CI', '#6b9a5f', 0, 'checkin') })
+    seen.add(key);
+    latestCi.push(c);
+  });
+  latestCi.forEach(c => {
+    L.marker([c.lat, c.lng], { icon: liveIcon('CI', '#6b9a5f', 0, 'checkin') })
       .bindPopup(`${c.name||'Operator'}<br>${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}`)
       .addTo(liveLayer);
   });

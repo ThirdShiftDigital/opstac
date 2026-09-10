@@ -431,7 +431,7 @@
       linear-gradient(90deg, rgba(168,153,104,0.12) 1px, transparent 1px);
     background-size: 12.5% 12.5%;
   }
-  .map-canvas.has-image{ background-image:none; padding-top:0; height:360px; }
+  .map-canvas.has-image{ background-image:none; padding-top:0; height:52vh; min-height:320px; }
   #mapLive{ background:#0b100d; }
   .leaflet-container{ font-family: Inter, sans-serif; background:#0b100d; }
   .live-map-icon{ background:none !important; border:none !important; }
@@ -440,13 +440,14 @@
   .lm-square{ width:26px; height:26px; border-radius:3px; }
   .lm-diamond{ width:24px; height:24px; transform:rotate(45deg); border-radius:3px; }
   .lm-diamond span{ transform:rotate(-45deg); display:block; }
-  .lm-tri{ width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:24px solid #d4b86a; background:none; }
-  .lm-tri span{ position:absolute; margin-top:10px; color:#0c0e0c; }
-  .lm-vehicle{ width:40px; height:18px; border-radius:4px 10px 4px 4px; position:relative; }
-  .lm-chev{ width:28px; height:22px; clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%); }
-  .lm-pin{ width:22px; height:22px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); }
-  .lm-pin span{ transform:rotate(45deg); display:block; }
-  .lm-lz{ width:30px; height:30px; border-radius:50%; border:2px solid #0c0e0c; letter-spacing:0; font-size:11px; }
+  .lm-tri{ width:26px; height:26px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .lm-vehicle{ width:42px; height:16px; border-radius:3px 9px 3px 3px; }
+  .lm-chev{ width:26px; height:22px; clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%); }
+  .lm-pin{ width:20px; height:20px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); }
+  .lm-pin span{ transform:rotate(45deg); display:block; font-size:8px; }
+  .lm-lz{ width:28px; height:28px; border-radius:50%; font-size:12px; font-weight:900; }
+  .lm-ems{ width:28px; height:28px; border-radius:50%; font-size:14px; font-weight:900; }
+  .leaflet-control-attribution{ display:none !important; }
   .map-canvas .map-pin, .map-canvas .map-stack-pin, .map-canvas .map-loc-pin{ display:none !important; }
   #mapBgImage{
     position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none;
@@ -945,12 +946,8 @@
           <div class="op-role-bar" id="opRoleBar" style="display:none;"></div>
           <div class="op-palette" id="opPalette"></div>
           <div id="stackEditor" class="stack-editor" style="display:none;"></div>
-          <div class="field-group" style="margin:8px 0 0;">
-            <label class="field-label">Check-ins</label>
-            <div id="checkinList"></div>
-          </div>
           <input type="file" accept="image/*" id="mapImageInput" style="display:none">
-          <div class="map-canvas has-image" id="mapCanvas" style="padding-top:0; height:360px;">
+          <div class="map-canvas has-image" id="mapCanvas" style="padding-top:0; height:52vh; min-height:320px;">
             <div id="mapLive" style="position:absolute; inset:0; z-index:2;"></div>
             <div class="map-upload-prompt" id="mapUploadPrompt">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -960,6 +957,9 @@
             <svg class="map-compass" id="mapCompass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--olive)"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="8"/></svg>
             <div class="map-scale" id="mapScaleLabel">TACTICAL OVERLAY — PLACEHOLDER GRID</div>
             <div class="map-change-btn no-print" id="mapChangeBtn" style="display:none;">Change Image</div>
+          </div>
+          <div class="field-group" style="margin:10px 0 0;">
+            <div id="checkinList"></div>
           </div>
         </div>
 
