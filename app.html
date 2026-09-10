@@ -564,6 +564,27 @@
   ::-webkit-scrollbar{ display:none; }
 
   /* ---- Ops Log ---- */
+  .ops-quick-row{
+    display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;
+  }
+  .ops-quick-btn{
+    flex: 0 0 auto;
+    padding: 8px 11px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: var(--bg-raised);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ops-quick-btn:active{
+    border-color: var(--olive);
+    background: var(--olive-dim);
+    color: var(--olive-bright);
+  }
+
   .ops-log-wrap{ padding: 0 0 20px; }
   .ops-log-input-bar{
     position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line);

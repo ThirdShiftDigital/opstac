@@ -1400,6 +1400,45 @@ const OPS_LOG_TAGS = [
   'Injury', 'Medical', 'Equipment', 'Command'
 ];
 
+const OPS_QUICK_ACTIONS = [
+  { label: 'On Scene', tag: 'Movement', text: 'Team on scene' },
+  { label: 'Entry Made', tag: 'Entry / Breach', text: 'Entry made' },
+  { label: 'Suspect Contact', tag: 'Suspect Contact', text: 'Suspect contact' },
+  { label: 'Suspect Custody', tag: 'Suspect Custody', text: 'Suspect in custody' },
+  { label: 'Shots Fired', tag: 'Shots Fired', text: 'Shots fired' },
+  { label: 'Use of Force', tag: 'Use of Force', text: 'Use of force' },
+  { label: 'Injury – Suspect', tag: 'Injury', text: 'Suspect injury' },
+  { label: 'Injury – Team', tag: 'Injury', text: 'Team member injury' },
+  { label: 'Medical', tag: 'Medical', text: 'Medical activated' },
+  { label: 'All Clear', tag: 'Note', text: 'All clear / scene secure' },
+];
+
+async function saveOpsLog(newLog){
+  const { error } = await supabaseClient.from('operations').update({ ops_log: newLog }).eq('id', currentOpId);
+  if(error){
+    console.warn('ops_log update failed, trying nested store', error);
+    const debrief = { ...(currentOpCache.debrief || {}), _ops_log: newLog };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+  currentOpCache.ops_log = newLog;
+}
+
+async function addOpsLogEntry({ tag, text, critical = false }){
+  const entry = {
+    id: (crypto.randomUUID && crypto.randomUUID()) || String(Date.now()) + Math.random().toString(16).slice(2),
+    ts: new Date().toISOString(),
+    tag: tag || 'Note',
+    text: text || '',
+    critical: !!critical,
+    author: (currentProfile && currentProfile.full_name) || 'Commander'
+  };
+  const newLog = [entry, ...(currentOpCache.ops_log || [])];
+  await saveOpsLog(newLog);
+  renderOpsLog(currentOpCache);
+  return entry;
+}
+
 function renderOpsLog(op){
   const el = $('#opsLogContent');
   if(!el) return;
@@ -1416,11 +1455,13 @@ function renderOpsLog(op){
       actionsHtml = `<button class="btn btn-primary" id="logActivateBtn" style="font-size:12px; padding:7px 12px;">Mark Active</button>`;
     } else if(status === 'active'){
       actionsHtml = `<button class="btn btn-primary" id="logCompleteBtn" style="font-size:12px; padding:7px 12px;">Mark Complete</button>`;
+    } else if(status === 'complete'){
+      actionsHtml = `<button class="btn btn-outline" id="logReopenBtn" style="font-size:12px; padding:7px 12px;">Reopen Operation</button>`;
     }
   }
 
   const entriesHtml = log.length === 0
-    ? `<div class="ops-log-empty">No entries yet.<br>Log key events as they happen.</div>`
+    ? `<div class="ops-log-empty">No entries yet.<br>Tap a quick action or type a note.</div>`
     : `<div class="ops-log-list">${log.map(e => {
         const t = new Date(e.ts);
         const timeStr = isNaN(t) ? '' : t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -1435,19 +1476,35 @@ function renderOpsLog(op){
         </div>`;
       }).join('')}</div>`;
 
+  const quickHtml = editable && status !== 'complete' ? `
+    <div class="ops-quick-row" id="opsQuickRow">
+      ${OPS_QUICK_ACTIONS.map((q, i) =>
+        `<button type="button" class="ops-quick-btn" data-quick-idx="${i}">${q.label}</button>`
+      ).join('')}
+    </div>` : '';
+
   const composeHtml = editable && status !== 'complete' ? `
     <div class="ops-log-input-bar">
+      ${quickHtml}
       <div class="ops-log-tags" id="opsLogTags">
         ${OPS_LOG_TAGS.map((tag,i) => `<div class="ops-log-tag ${i===0?'active':''}" data-tag="${tag}">${tag}</div>`).join('')}
       </div>
       <div class="ops-log-compose">
-        <textarea id="opsLogInput" placeholder="What just happened..." rows="1"></textarea>
+        <textarea id="opsLogInput" placeholder="Custom note..." rows="1"></textarea>
         <button class="ops-log-add" id="opsLogAddBtn">Add</button>
       </div>
       <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); cursor:pointer;">
           <input type="checkbox" id="opsLogCritical" style="accent-color:var(--olive);"> Critical
         </label>
+      </div>
+      <div id="opsQuickNotePrompt" style="display:none; margin-top:10px; padding:10px; background:var(--bg-panel); border:1px solid var(--line); border-radius:var(--radius);">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">Entry logged. Add a short note? <span style="color:var(--steel);">(optional)</span></div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="opsQuickNoteInput" class="field-input" placeholder="Optional details..." style="flex:1; font-size:13px; padding:8px 10px;">
+          <button type="button" class="btn btn-primary" id="opsQuickNoteSave" style="font-size:12px; padding:8px 12px;">Save</button>
+          <button type="button" class="btn btn-outline" id="opsQuickNoteSkip" style="font-size:12px; padding:8px 12px;">Skip</button>
+        </div>
       </div>
     </div>` : '';
 
@@ -1461,7 +1518,7 @@ function renderOpsLog(op){
       ${composeHtml}
     </div>`;
 
-  // Wire events
+  // Wire free-text
   if(editable && status !== 'complete'){
     let selectedTag = 'Note';
     $$('#opsLogTags .ops-log-tag').forEach(tagEl => {
@@ -1472,46 +1529,74 @@ function renderOpsLog(op){
       });
     });
 
-    const addEntry = async () => {
+    const addCustom = async () => {
       const input = $('#opsLogInput');
-      const text = (input?.value || '').trim();
+      const text = (input && input.value || '').trim();
       if(!text) return;
-      const entry = {
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        ts: new Date().toISOString(),
+      await addOpsLogEntry({
         tag: selectedTag,
         text,
-        critical: !!$('#opsLogCritical')?.checked,
-        author: currentProfile?.full_name || 'Commander'
-      };
-      const newLog = [entry, ...(currentOpCache.ops_log || [])];
-      const { error } = await supabaseClient.from('operations').update({ ops_log: newLog }).eq('id', currentOpId);
-      if(error){
-        // Column may not exist yet — fall back to storing under debrief for compatibility
-        console.warn('ops_log update failed, trying nested store', error);
-        const debrief = { ...(currentOpCache.debrief || {}), _ops_log: newLog };
-        await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
-        currentOpCache.debrief = debrief;
-      }
-      currentOpCache.ops_log = newLog;
-      input.value = '';
+        critical: !!( $('#opsLogCritical') && $('#opsLogCritical').checked )
+      });
+      if(input) input.value = '';
       if($('#opsLogCritical')) $('#opsLogCritical').checked = false;
-      renderOpsLog(currentOpCache);
     };
 
-    $('#opsLogAddBtn')?.addEventListener('click', addEntry);
-    $('#opsLogInput')?.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); addEntry(); }
+    $('#opsLogAddBtn') && $('#opsLogAddBtn').addEventListener('click', addCustom);
+    $('#opsLogInput') && $('#opsLogInput').addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); addCustom(); }
+    });
+
+    // Quick actions
+    let lastQuickEntryId = null;
+    $$('#opsQuickRow .ops-quick-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const q = OPS_QUICK_ACTIONS[Number(btn.dataset.quickIdx)];
+        if(!q) return;
+        const entry = await addOpsLogEntry({ tag: q.tag, text: q.text, critical: false });
+        lastQuickEntryId = entry.id;
+        const prompt = $('#opsQuickNotePrompt');
+        const noteInput = $('#opsQuickNoteInput');
+        if(prompt){
+          prompt.style.display = 'block';
+          if(noteInput){ noteInput.value = ''; noteInput.focus(); }
+        }
+      });
+    });
+
+    $('#opsQuickNoteSkip') && $('#opsQuickNoteSkip').addEventListener('click', () => {
+      const prompt = $('#opsQuickNotePrompt');
+      if(prompt) prompt.style.display = 'none';
+      lastQuickEntryId = null;
+    });
+
+    $('#opsQuickNoteSave') && $('#opsQuickNoteSave').addEventListener('click', async () => {
+      const note = ($('#opsQuickNoteInput') && $('#opsQuickNoteInput').value || '').trim();
+      if(note && lastQuickEntryId){
+        const newLog = (currentOpCache.ops_log || []).map(e => {
+          if(e.id === lastQuickEntryId){
+            return { ...e, text: e.text + (e.text ? ' — ' : '') + note };
+          }
+          return e;
+        });
+        await saveOpsLog(newLog);
+        renderOpsLog(currentOpCache);
+      } else {
+        const prompt = $('#opsQuickNotePrompt');
+        if(prompt) prompt.style.display = 'none';
+      }
+      lastQuickEntryId = null;
     });
   }
 
-  $('#logActivateBtn')?.addEventListener('click', async () => {
+  $('#logActivateBtn') && $('#logActivateBtn').addEventListener('click', async () => {
     await supabaseClient.from('operations').update({ status:'active' }).eq('id', currentOpId);
     currentOpCache.status = 'active';
     renderPlan(currentOpCache);
     renderOpsLog(currentOpCache);
   });
-  $('#logCompleteBtn')?.addEventListener('click', async () => {
+
+  $('#logCompleteBtn') && $('#logCompleteBtn').addEventListener('click', async () => {
     const log = currentOpCache.ops_log || [];
     let debrief = currentOpCache.debrief || {};
     if(!debrief.timeline && log.length){
@@ -1532,6 +1617,15 @@ function renderOpsLog(op){
     renderDebrief(currentOpCache);
     $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
     $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
+  });
+
+  $('#logReopenBtn') && $('#logReopenBtn').addEventListener('click', async () => {
+    if(!confirm('Reopen this operation? It will return to Active status so you can continue logging.')) return;
+    await supabaseClient.from('operations').update({ status:'active' }).eq('id', currentOpId);
+    currentOpCache.status = 'active';
+    renderPlan(currentOpCache);
+    renderOpsLog(currentOpCache);
+    renderDebrief(currentOpCache);
   });
 }
 
