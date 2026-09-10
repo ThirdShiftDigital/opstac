@@ -1016,6 +1016,7 @@ async function openOpDetail(opId){
   currentOpId = opId;
   opsView = 'detail';
   armedOperatorId = null;
+  selectedPinMemberId = null;
   $('#opsListView').style.display = 'none';
   $('#opsDetailView').style.display = 'block';
   $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='map'));
@@ -1115,20 +1116,87 @@ $('#opDeleteBtn').addEventListener('click', async () => {
   loadOpsList();
 });
 
+let selectedPinMemberId = null; // pin selected for move/remove
+
+const OP_ASSIGNMENT_ROLES = [
+  'Entry', 'Perimeter', 'Overwatch', 'Breach', 'Cover',
+  'Less-Lethal', 'Medic', 'Command', 'Rear Security', 'Other'
+];
+
 function renderMapPalette(op, operators){
   const editable = canEditOps();
   $('#opPalette').innerHTML = allPersonnel.map(p => {
-    const placed = operators.some(o => o.member_id === p.id);
-    return `<div class="op-chip ${armedOperatorId===p.id?'armed':''}" data-member-id="${p.id}">
+    const placed = operators.find(o => o.member_id === p.id);
+    const role = placed && placed.role ? placed.role : '';
+    return `<div class="op-chip ${armedOperatorId===p.id?'armed':''} ${placed?'placed':''}" data-member-id="${p.id}">
       <div class="mini-avatar" style="${placed?'box-shadow:0 0 0 2px var(--olive);':''}">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
-      <div class="op-chip-label">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div></div>`;
+      <div class="op-chip-label">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
+      ${role ? `<div class="op-chip-role">${role}</div>` : ''}
+    </div>`;
   }).join('');
+
+  // Role selector under palette when someone is armed
+  let roleBar = $('#opRoleBar');
+  if(!roleBar){
+    roleBar = document.createElement('div');
+    roleBar.id = 'opRoleBar';
+    roleBar.className = 'op-role-bar';
+    const palette = $('#opPalette');
+    if(palette && palette.parentNode) palette.parentNode.insertBefore(roleBar, palette.nextSibling);
+  }
+
+  if(editable && armedOperatorId){
+    const existing = operators.find(o => o.member_id === armedOperatorId);
+    const currentRole = (existing && existing.role) || '';
+    roleBar.style.display = 'flex';
+    roleBar.innerHTML = OP_ASSIGNMENT_ROLES.map(r =>
+      `<button type="button" class="op-role-chip ${currentRole===r?'active':''}" data-role="${r}">${r}</button>`
+    ).join('') + `<button type="button" class="op-role-chip ${!currentRole?'active':''}" data-role="">No role</button>`;
+    $$('#opRoleBar .op-role-chip').forEach(chip => {
+      chip.addEventListener('click', async () => {
+        const role = chip.dataset.role || null;
+        const placed = operators.find(o => o.member_id === armedOperatorId);
+        if(placed){
+          await supabaseClient.from('operation_operators').update({ role }).eq('operation_id', currentOpId).eq('member_id', armedOperatorId);
+          const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+          currentOperatorsCache = refreshed || [];
+          renderMapPins(currentOperatorsCache);
+          renderMapPalette(currentOpCache, currentOperatorsCache);
+        } else {
+          // Store pending role on the chip selection via dataset for next place
+          roleBar.dataset.pendingRole = role || '';
+          $$('#opRoleBar .op-role-chip').forEach(c => c.classList.toggle('active', (c.dataset.role||'') === (role||'')));
+        }
+      });
+    });
+    if(!roleBar.dataset.pendingRole) roleBar.dataset.pendingRole = currentRole || '';
+  } else {
+    roleBar.style.display = 'none';
+    roleBar.innerHTML = '';
+    roleBar.dataset.pendingRole = '';
+  }
+
   if(!editable) return;
   $$('.op-chip').forEach(chip => chip.addEventListener('click', () => {
-    armedOperatorId = armedOperatorId === chip.dataset.memberId ? null : chip.dataset.memberId;
+    const id = chip.dataset.memberId;
+    // If already placed and we tap chip, select that pin for move/remove
+    const placed = operators.find(o => o.member_id === id);
+    if(placed){
+      selectedPinMemberId = selectedPinMemberId === id ? null : id;
+      armedOperatorId = null;
+      renderMapPalette(op, operators);
+      renderMapPins(operators);
+      $('#mapHint').textContent = selectedPinMemberId
+        ? `Selected ${memberById(id).name}. Tap map to move, or tap Remove on the pin.`
+        : 'Tap a team member below, then tap the map to place them.';
+      return;
+    }
+    selectedPinMemberId = null;
+    armedOperatorId = armedOperatorId === id ? null : id;
     renderMapPalette(op, operators);
+    renderMapPins(operators);
     $('#mapHint').textContent = armedOperatorId
-      ? `Tap the map to place ${memberById(armedOperatorId).name}. Tap their pin again to remove.`
+      ? `Place ${memberById(armedOperatorId).name} — choose a role below, then tap the map.`
       : 'Tap a team member below, then tap the map to place them.';
   }));
 }
@@ -1161,6 +1229,8 @@ function renderMapImageState(op){
     scaleLabel.style.display = 'block';
   }
 }
+
+
 $('#mapUploadPrompt').addEventListener('click', () => { if(canEditOps()) $('#mapImageInput').click(); });
 $('#mapChangeBtn').addEventListener('click', () => { if(canEditOps()) $('#mapImageInput').click(); });
 $('#mapImageInput').addEventListener('change', async (e) => {
@@ -1188,41 +1258,103 @@ $('#mapImageInput').addEventListener('change', async (e) => {
 function renderMapPins(operators){
   $$('.map-pin').forEach(p => p.remove());
   const canvas = $('#mapCanvas');
+  const editable = canEditOps();
   operators.forEach(o => {
     const m = memberById(o.member_id);
     if(!m) return;
     const pin = document.createElement('div');
-    pin.className = 'map-pin';
-    pin.style.left = o.x + '%'; pin.style.top = o.y + '%';
-    pin.textContent = m.name.split(' ').map(w=>w[0]).slice(-2).join('');
-    pin.title = m.name;
+    pin.className = 'map-pin' + (selectedPinMemberId === o.member_id ? ' selected' : '');
+    pin.style.left = o.x + '%';
+    pin.style.top = o.y + '%';
+    const initials = m.name.split(' ').map(w=>w[0]).slice(-2).join('');
+    pin.innerHTML = `<span class="map-pin-label">${initials}</span>` +
+      (o.role ? `<span class="map-pin-role">${o.role}</span>` : '') +
+      (editable && selectedPinMemberId === o.member_id
+        ? `<button type="button" class="map-pin-remove" title="Remove">×</button>` : '');
+    pin.title = m.name + (o.role ? ' · ' + o.role : '');
+
     pin.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if(!canEditOps()) return;
-      await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', o.member_id);
-      const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
-      currentOperatorsCache = refreshed || [];
-      renderMapPins(currentOperatorsCache);
-      renderMapPalette(currentOpCache, currentOperatorsCache);
+      if(!editable) return;
+      // Remove button
+      if(e.target.closest('.map-pin-remove')){
+        await supabaseClient.from('operation_operators').delete()
+          .eq('operation_id', currentOpId).eq('member_id', o.member_id);
+        selectedPinMemberId = null;
+        const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+        currentOperatorsCache = refreshed || [];
+        renderMapPins(currentOperatorsCache);
+        renderMapPalette(currentOpCache, currentOperatorsCache);
+        $('#mapHint').textContent = 'Tap a team member below, then tap the map to place them.';
+        return;
+      }
+      // Select pin for move/remove
+      selectedPinMemberId = selectedPinMemberId === o.member_id ? null : o.member_id;
+      armedOperatorId = null;
+      renderMapPins(operators);
+      renderMapPalette(currentOpCache, operators);
+      $('#mapHint').textContent = selectedPinMemberId
+        ? `Selected ${m.name}. Tap map to move, or tap × to remove.`
+        : 'Tap a team member below, then tap the map to place them.';
     });
     canvas.appendChild(pin);
   });
 }
-$('#mapCanvas').addEventListener('click', async (e) => {
-  if(!canEditOps() || !armedOperatorId) return;
-  if(e.target.closest('#mapUploadPrompt') || e.target.closest('#mapChangeBtn')) return;
-  const rect = e.currentTarget.getBoundingClientRect();
-  const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-  const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-  await supabaseClient.from('operation_operators').upsert({
-    operation_id: currentOpId, member_id: armedOperatorId,
-    x: Math.max(3,Math.min(97,x)), y: Math.max(3,Math.min(97,y)),
-  }, { onConflict:'operation_id,member_id' });
-  const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
-  currentOperatorsCache = refreshed || [];
-  renderMapPins(currentOperatorsCache);
-  renderMapPalette(currentOpCache, currentOperatorsCache);
-});
+
+// Re-bind map click (remove old listeners by cloning would be complex; replace handler body via flag)
+if(!window._mapClickBound){
+  window._mapClickBound = true;
+  $('#mapCanvas').addEventListener('click', async (e) => {
+    if(!canEditOps()) return;
+    if(e.target.closest('#mapUploadPrompt') || e.target.closest('#mapChangeBtn') || e.target.closest('.map-pin')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+    const clampedX = Math.max(3, Math.min(97, x));
+    const clampedY = Math.max(3, Math.min(97, y));
+
+    // Move selected pin
+    if(selectedPinMemberId){
+      await supabaseClient.from('operation_operators').update({
+        x: clampedX, y: clampedY
+      }).eq('operation_id', currentOpId).eq('member_id', selectedPinMemberId);
+      selectedPinMemberId = null;
+      const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+      currentOperatorsCache = refreshed || [];
+      renderMapPins(currentOperatorsCache);
+      renderMapPalette(currentOpCache, currentOperatorsCache);
+      $('#mapHint').textContent = 'Tap a team member below, then tap the map to place them.';
+      return;
+    }
+
+    if(!armedOperatorId) return;
+    const roleBar = $('#opRoleBar');
+    const role = (roleBar && roleBar.dataset.pendingRole) ? roleBar.dataset.pendingRole : null;
+    const payload = {
+      operation_id: currentOpId,
+      member_id: armedOperatorId,
+      x: clampedX,
+      y: clampedY
+    };
+    if(role) payload.role = role;
+
+    const { error } = await supabaseClient.from('operation_operators').upsert(payload, { onConflict:'operation_id,member_id' });
+    if(error && role){
+      // role column may not exist — retry without role
+      console.warn('upsert with role failed, retrying without', error);
+      await supabaseClient.from('operation_operators').upsert({
+        operation_id: currentOpId, member_id: armedOperatorId, x: clampedX, y: clampedY
+      }, { onConflict:'operation_id,member_id' });
+    }
+    armedOperatorId = null;
+    selectedPinMemberId = null;
+    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+    currentOperatorsCache = refreshed || [];
+    renderMapPins(currentOperatorsCache);
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+    $('#mapHint').textContent = 'Tap a team member below, then tap the map to place them.';
+  });
+}
 
 const PLAN_FIELDS = [
   { key:'objective', label:'Objective' }, { key:'approach', label:'Approach / Entry Plan' },
