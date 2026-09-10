@@ -623,6 +623,18 @@
     border-radius:4px; width:26px; height:26px; cursor:pointer; font-size:13px;
   }
   .stack-add-row{ display:flex; gap:8px; margin-top:10px; }
+
+  .map-loc-pin{
+    position:absolute; transform:translate(-50%,-50%);
+    min-width:44px; padding:6px 8px; border-radius:6px;
+    background:#1a1e18; border:1.5px solid var(--olive);
+    color:var(--olive-bright); text-align:center; cursor:grab;
+    z-index:7; touch-action:none;
+  }
+  .map-loc-pin.selected{ box-shadow:0 0 0 2px var(--olive-bright); }
+  .map-loc-pin[data-marker-type="medic"]{ border-color:#c45c5c; color:#e8a0a0; }
+  .map-loc-pin[data-marker-type="command"]{ border-color:#c7b482; color:#e8d9a8; }
+  .map-loc-label{ font-size:10px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; }
   .map-stack-pin{
     position:absolute; transform: translate(-50%, -50%);
     min-width: 42px; padding: 5px 7px 4px;

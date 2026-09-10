@@ -1138,6 +1138,10 @@ async function openOpDetail(opId){
     op.attached_units = op.debrief._attached_units;
   }
   if(op && !Array.isArray(op.attached_units)) op.attached_units = [];
+  if(op && !Array.isArray(op.map_markers) && op.debrief && Array.isArray(op.debrief._map_markers)){
+    op.map_markers = op.debrief._map_markers;
+  }
+  if(op && !Array.isArray(op.map_markers)) op.map_markers = [];
   renderOpDetail(op, operators || []);
   updateFab('operations');
 }
@@ -1211,6 +1215,7 @@ function renderOpDetail(op, operators){
   renderMapImageState(op);
   renderMapPins(operators);
   renderStacks(op);
+  renderMapMarkers(op);
   renderPlan(op);
   renderOpsLog(op);
   renderDebrief(op);
@@ -1228,9 +1233,91 @@ $('#opDeleteBtn').addEventListener('click', async () => {
 let selectedPinMemberId = null; // pin selected for move/remove
 let selectedStackId = null;
 let placingStack = false;
+let placingMarkerType = null;
+let selectedMarkerId = null;
 function sid(id){ return id == null ? '' : String(id); }
 function sameStack(a, b){ return sid(a) && sid(a) === sid(b); }
 
+
+
+const MAP_LOCATION_TYPES = [
+  { type: 'command', label: 'Command' },
+  { type: 'medic', label: 'Medic' },
+  { type: 'rally', label: 'Rally' },
+  { type: 'staging', label: 'Staging' },
+];
+
+async function saveMapMarkers(markers){
+  const { error } = await supabaseClient.from('operations').update({ map_markers: markers }).eq('id', currentOpId);
+  if(error){
+    const debrief = { ...(currentOpCache.debrief || {}), _map_markers: markers };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+  currentOpCache.map_markers = markers;
+}
+
+function renderMapMarkers(op){
+  $$('.map-loc-pin').forEach(p => p.remove());
+  const canvas = $('#mapCanvas');
+  if(!canvas) return;
+  const markers = Array.isArray(op.map_markers) ? op.map_markers : [];
+  const editable = canEditOps();
+  markers.forEach(mk => {
+    const pin = document.createElement('div');
+    pin.className = 'map-loc-pin' + (selectedMarkerId === sid(mk.id) ? ' selected' : '');
+    pin.dataset.markerType = mk.type || '';
+    pin.style.left = mk.x + '%';
+    pin.style.top = mk.y + '%';
+    pin.innerHTML = `<div class="map-loc-label">${mk.label || mk.type || 'Mark'}</div>`;
+    pin.style.touchAction = 'none';
+    if(editable){
+      pin.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try { pin.setPointerCapture(e.pointerId); } catch(_){}
+        selectedMarkerId = sid(mk.id);
+        armedOperatorId = null;
+        selectedPinMemberId = null;
+        selectedStackId = null;
+        placingMarkerType = null;
+        pin.dataset.dragX = String(mk.x);
+        pin.dataset.dragY = String(mk.y);
+        const move = (ev) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = Math.max(3, Math.min(97, Math.round(((ev.clientX - rect.left) / rect.width) * 1000) / 10));
+          const y = Math.max(3, Math.min(97, Math.round(((ev.clientY - rect.top) / rect.height) * 1000) / 10));
+          pin.style.left = x + '%';
+          pin.style.top = y + '%';
+          pin.dataset.dragX = String(x);
+          pin.dataset.dragY = String(y);
+        };
+        const up = async () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          const x = parseFloat(pin.dataset.dragX);
+          const y = parseFloat(pin.dataset.dragY);
+          if(Number.isFinite(x) && Number.isFinite(y)){
+            const next = (currentOpCache.map_markers || []).map(m => sid(m.id)===sid(mk.id) ? { ...m, x, y } : m);
+            await saveMapMarkers(next);
+          }
+          renderMapMarkers(currentOpCache);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+      });
+      pin.addEventListener('dblclick', async (e) => {
+        e.stopPropagation();
+        if(!confirm('Remove this location marker?')) return;
+        const next = (currentOpCache.map_markers || []).filter(m => sid(m.id) !== sid(mk.id));
+        await saveMapMarkers(next);
+        renderMapMarkers(currentOpCache);
+        renderMapPalette(currentOpCache, currentOperatorsCache);
+      });
+    }
+    canvas.appendChild(pin);
+  });
+}
 
 const OP_ASSIGNMENT_ROLES = [
   'Entry', 'Perimeter', 'Overwatch', 'Breach', 'Cover',
@@ -1240,6 +1327,15 @@ const OP_ASSIGNMENT_ROLES = [
 function renderMapPalette(op, operators){
   const editable = canEditOps();
   const focusId = armedOperatorId || selectedPinMemberId;
+
+  const locChips = MAP_LOCATION_TYPES.map(loc => {
+    const on = placingMarkerType === loc.type;
+    return `<div class="op-chip ${on?'armed selected-chip':''}" data-loc-type="${loc.type}">
+      <div class="mini-avatar">${loc.label.slice(0,2).toUpperCase()}</div>
+      <div class="op-chip-label">${loc.label}</div>
+      <div class="op-chip-role">Location</div>
+    </div>`;
+  }).join('');
 
   const stackChips = ((op && op.map_stacks) || []).map(st => {
     const count = (st.members || []).length;
@@ -1261,7 +1357,7 @@ function renderMapPalette(op, operators){
       <div class="op-chip-label">${p.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
       ${role ? `<div class="op-chip-role">${role}</div>` : ''}
     </div>`;
-  }).join('') + stackChips;
+  }).join('') + locChips + stackChips;
 
   const roleBar = $('#opRoleBar');
   if(roleBar){
@@ -1325,6 +1421,19 @@ function renderMapPalette(op, operators){
     $('#mapHint').textContent = armedOperatorId
       ? `Place ${memberById(armedOperatorId).name} — choose role above, then tap the map.`
       : 'Tap a team member, choose a role, then tap the map.';
+  }));
+
+  $$('#opPalette .op-chip[data-loc-type]').forEach(chip => chip.addEventListener('click', () => {
+    const type = chip.dataset.locType;
+    placingMarkerType = placingMarkerType === type ? null : type;
+    armedOperatorId = null;
+    selectedPinMemberId = null;
+    selectedStackId = null;
+    placingStack = false;
+    renderMapPalette(currentOpCache, currentOperatorsCache);
+    $('#mapHint').textContent = placingMarkerType
+      ? `Tap the map to place ${chip.querySelector('.op-chip-label').textContent} — no operator will be attached.`
+      : 'Tap a person to assign, or a location chip to mark Command / Medic / Rally.';
   }));
 
   $$('#opPalette .op-chip[data-stack-id]').forEach(chip => chip.addEventListener('click', () => {
@@ -1543,6 +1652,25 @@ if(!window._mapClickBound){
       renderMapPins(currentOperatorsCache);
       renderMapPalette(currentOpCache, currentOperatorsCache);
       $('#mapHint').textContent = 'Tap a team member below, then tap the map to place them.';
+      return;
+    }
+
+    if(placingMarkerType){
+      const meta = MAP_LOCATION_TYPES.find(t => t.type === placingMarkerType) || { type: placingMarkerType, label: placingMarkerType };
+      const markers = Array.isArray(currentOpCache.map_markers) ? currentOpCache.map_markers : [];
+      const mk = {
+        id: sid((crypto.randomUUID && crypto.randomUUID()) || ('mk-' + Date.now())),
+        type: meta.type,
+        label: meta.label,
+        x: clampedX,
+        y: clampedY
+      };
+      await saveMapMarkers([...markers, mk]);
+      placingMarkerType = null;
+      selectedMarkerId = sid(mk.id);
+      renderMapMarkers(currentOpCache);
+      renderMapPalette(currentOpCache, currentOperatorsCache);
+      $('#mapHint').textContent = meta.label + ' placed. Drag to adjust. Double-tap to remove.';
       return;
     }
 
