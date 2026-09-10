@@ -1712,7 +1712,10 @@ function renderAttachedUnits(op, editable){
       <div class="stack-ord">${idx+1}</div>
       <div class="stack-member-name" style="flex:1;">
         ${editable ? `<input class="field-input unit-rename" data-unit-idx="${idx}" value="${String(name).replace(/"/g,'&quot;')}" style="font-size:13px; padding:6px 8px;">` : `<strong>${name}</strong>`}
-        <div style="font-size:11px; color:var(--text-dim); margin-top:3px;">${cmd ? cmd.name : 'No commander'}</div>
+        ${editable ? `<select class="field-input unit-commander" data-unit-idx="${idx}" style="font-size:12px; padding:6px 8px; margin-top:4px;">
+            <option value="">No commander</option>
+            ${allPersonnel.map(p => `<option value="${p.id}" ${(u.commander_personnel_id||'')===p.id?'selected':''}>${p.name}</option>`).join('')}
+          </select>` : `<div style="font-size:11px; color:var(--text-dim); margin-top:3px;">${cmd ? cmd.name : 'No commander'}</div>`}
       </div>
       ${editable ? `<button type="button" class="stack-rem-btn" data-unit-idx="${idx}">×</button>` : ''}
     </div>`;
@@ -1743,6 +1746,21 @@ function renderAttachedUnits(op, editable){
 
   fillNamePresets('newUnitPresets', 'newUnitName');
 
+  $$('.unit-commander').forEach(sel => sel.addEventListener('change', async () => {
+    const idx = Number(sel.dataset.unitIdx);
+    const commanderId = sel.value || null;
+    const next = units.map((u, i) => i === idx ? { ...u, commander_personnel_id: commanderId } : u);
+    const unit = next[idx];
+    await saveAttachedUnits(next);
+    if(unit && unit.subteam_id){
+      const { error } = await supabaseClient.from('subteams').update({ leader_personnel_id: commanderId }).eq('id', unit.subteam_id);
+      if(!error){
+        const st = allSubteams.find(t => t.id === unit.subteam_id);
+        if(st) st.leader_personnel_id = commanderId;
+      }
+    }
+    renderAttachedUnits(currentOpCache, true);
+  }));
   $$('.unit-rename').forEach(input => input.addEventListener('blur', async () => {
     const idx = Number(input.dataset.unitIdx);
     const name = input.value.trim();
@@ -3120,20 +3138,31 @@ function openSubteamEditSheet(subteam){
   $('#eSubteamName').value = subteam.name;
   $('#eSubteamFocus').value = subteam.focus || '';
   fillNamePresets('eSubteamPresets', 'eSubteamName');
-  const members = allPersonnel.filter(p => p.subteam_id === subteam.id);
-  $('#eSubteamLeader').innerHTML = `<option value="">No leader assigned</option>` +
-    members.map(p => `<option value="${p.id}" ${subteam.leader_personnel_id===p.id?'selected':''}>${p.name}</option>`).join('');
-  $('#eSubteamNoMembers').style.display = members.length === 0 ? 'block' : 'none';
+  const currentLeader = subteam.leader_personnel_id || '';
+  $('#eSubteamLeader').innerHTML = `<option value="">No commander assigned</option>` +
+    allPersonnel.map(p => `<option value="${p.id}" ${currentLeader===p.id?'selected':''}>${p.name}</option>`).join('');
+  if($('#eSubteamNoMembers')) $('#eSubteamNoMembers').style.display = 'none';
   $('#editSubteamSheet').classList.add('active');
 }
 $('#eSubteamCancel').addEventListener('click', () => $('#editSubteamSheet').classList.remove('active'));
 $('#eSubteamSave').addEventListener('click', async () => {
   const name = $('#eSubteamName').value.trim();
   if(!name) return;
-  await supabaseClient.from('subteams').update({
+  const leaderId = $('#eSubteamLeader').value || null;
+  const { error } = await supabaseClient.from('subteams').update({
     name, focus: $('#eSubteamFocus').value.trim() || null,
-    leader_personnel_id: $('#eSubteamLeader').value || null,
+    leader_personnel_id: leaderId,
   }).eq('id', editingSubteamId);
+  if(error){
+    const { error: fallback } = await supabaseClient.from('subteams').update({
+      name, focus: $('#eSubteamFocus').value.trim() || null
+    }).eq('id', editingSubteamId);
+    if(fallback){ alert('Could not save team: ' + error.message); return; }
+    alert('Name saved. Add this column in Supabase so commanders persist:\nALTER TABLE subteams ADD COLUMN IF NOT EXISTS leader_personnel_id uuid;');
+  } else {
+    const st = allSubteams.find(t => t.id === editingSubteamId);
+    if(st){ st.name = name; st.focus = $('#eSubteamFocus').value.trim() || null; st.leader_personnel_id = leaderId; }
+  }
   $('#editSubteamSheet').classList.remove('active');
   loadRoster();
 });
