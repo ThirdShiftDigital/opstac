@@ -1413,10 +1413,10 @@ function renderMapPins(operators){
         ? `<button type="button" class="map-pin-remove" title="Remove">×</button>` : '');
     pin.title = m.name + (o.role ? ' · ' + o.role : '');
 
+    pin.style.touchAction = 'none';
     pin.addEventListener('click', async (e) => {
       e.stopPropagation();
       if(!editable) return;
-      // Remove button
       if(e.target.closest('.map-pin-remove')){
         await supabaseClient.from('operation_operators').delete()
           .eq('operation_id', currentOpId).eq('member_id', o.member_id);
@@ -1425,20 +1425,44 @@ function renderMapPins(operators){
         currentOperatorsCache = refreshed || [];
         renderMapPins(currentOperatorsCache);
         renderMapPalette(currentOpCache, currentOperatorsCache);
-        $('#mapHint').textContent = 'Tap a team member below, then tap the map to place them.';
         return;
       }
-      // Select pin for move/remove
-      selectedPinMemberId = selectedPinMemberId === o.member_id ? null : o.member_id;
-      armedOperatorId = null;
-      selectedStackId = null;
-      placingStack = false;
-      renderMapPins(operators);
-      renderMapPalette(currentOpCache, operators);
-      $('#mapHint').textContent = selectedPinMemberId
-        ? `Selected ${m.name}. Tap map to move, or tap × to remove.`
-        : 'Tap a team member below, then tap the map to place them.';
     });
+    if(editable){
+      pin.addEventListener('pointerdown', (e) => {
+        if(e.target.closest('.map-pin-remove')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        selectedPinMemberId = o.member_id;
+        selectedStackId = null;
+        armedOperatorId = null;
+        placingStack = false;
+        const move = (ev) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = Math.max(3, Math.min(97, Math.round(((ev.clientX - rect.left) / rect.width) * 1000) / 10));
+          const y = Math.max(3, Math.min(97, Math.round(((ev.clientY - rect.top) / rect.height) * 1000) / 10));
+          pin.style.left = x + '%';
+          pin.style.top = y + '%';
+          pin.dataset.dragX = String(x);
+          pin.dataset.dragY = String(y);
+        };
+        const up = async () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          const x = parseFloat(pin.dataset.dragX);
+          const y = parseFloat(pin.dataset.dragY);
+          if(Number.isFinite(x) && Number.isFinite(y)){
+            await supabaseClient.from('operation_operators').update({ x, y }).eq('operation_id', currentOpId).eq('member_id', o.member_id);
+            const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+            currentOperatorsCache = refreshed || [];
+          }
+          renderMapPins(currentOperatorsCache);
+          renderMapPalette(currentOpCache, currentOperatorsCache);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+      });
+    }
     canvas.appendChild(pin);
   });
 }
