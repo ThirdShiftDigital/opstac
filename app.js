@@ -3427,7 +3427,8 @@ function analyzeDebrief(op){
 $('#opPrintBtn').addEventListener('click', async () => {
   const op = currentOpCache;
   const w = window.open('', '_blank'); // open synchronously first — same popup-blocker fix as Signal group sends
-  const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
+  let { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
+      photos = (photos||[]).filter(p => !p.storage_path || String(p.storage_path).includes(String(op.id)));
   const photosWithUrls = await Promise.all((photos||[]).map(async p => {
     const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(p.storage_path, 3600);
     if(error){ console.error('Print report: could not get signed URL for photo', { path: p.storage_path, error }); return { ...p, url: '' }; }
@@ -3713,7 +3714,8 @@ async function generateOpPresentation(op){
     }
 
     if(opt.photos !== false){
-      const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
+      let { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
+      photos = (photos||[]).filter(p => !p.storage_path || String(p.storage_path).includes(String(op.id)));
       if(!photos || !photos.length){
         /* skip empty photo slide */
       }
