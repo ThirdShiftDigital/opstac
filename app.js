@@ -550,7 +550,7 @@ function renderMyStatusCard(me, roleLine){
   ];
   return `
     <div class="my-status-card">
-      <div class="my-status-top">
+      <div class="my-status-top" id="editMyRosterBtn" style="cursor:pointer;">
         <div class="my-status-avatar">${me.name.split(' ').map(w=>w[0]).slice(-2).join('')}</div>
         <div><div class="my-status-name">${me.name}</div><div class="my-status-role">${me.rank||''} · ${roleLine}</div></div>
       </div>
@@ -561,6 +561,10 @@ function renderMyStatusCard(me, roleLine){
     </div>`;
 }
 function wireMyStatusCard(){
+  const editMe = $('#editMyRosterBtn');
+  if(editMe && myPersonnel){
+    editMe.addEventListener('click', () => openMemberSheet(myPersonnel));
+  }
   const row = $('#myStatusToggleRow');
   if(!row || !myPersonnel) return;
   $$('#myStatusToggleRow .quick-toggle').forEach(btn => btn.addEventListener('click', async () => {
@@ -628,9 +632,13 @@ async function loadRoster(){
     if(subteam) openSubteamEditSheet(subteam);
   }));
 
-  if(canManageRecords()){
-    $$('#rosterList [data-personnel-id]').forEach(card => card.addEventListener('click', () => openMemberSheet(memberById(card.dataset.personnelId))));
-  }
+  $$('#rosterList [data-personnel-id]').forEach(card => card.addEventListener('click', () => {
+    const person = memberById(card.dataset.personnelId);
+    if(!person) return;
+    const isSelf = myPersonnel && person.id === myPersonnel.id;
+    if(!canManageRecords() && !isSelf) return;
+    openMemberSheet(person);
+  }));
 }
 
 async function loadPendingJoinRequests(){
@@ -793,8 +801,15 @@ $('#mMemberSave').addEventListener('click', async () => {
     on_call: mMemberOnCallVal,
   };
   if(editingMemberId){
-    const { error } = await savePersonnelRecord(editingMemberId, payload, false);
-    if(error) console.warn('personnel update', error);
+    const { data, error } = await savePersonnelRecord(editingMemberId, payload, false);
+    if(error){
+      alert('Could not save this operator: ' + error.message);
+      return;
+    }
+    if(data && myPersonnel && data.id === myPersonnel.id) myPersonnel = { ...myPersonnel, ...data };
+    if(data){
+      allPersonnel = allPersonnel.map(p => p.id === data.id ? { ...p, ...data } : p);
+    }
     $('#memberSheet').classList.remove('active');
     loadRoster();
     return;
