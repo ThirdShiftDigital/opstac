@@ -1142,6 +1142,10 @@ async function openOpDetail(opId){
     op.map_markers = op.debrief._map_markers;
   }
   if(op && !Array.isArray(op.map_markers)) op.map_markers = [];
+  if(op && !Array.isArray(op.checkins) && op.debrief && Array.isArray(op.debrief._checkins)){
+    op.checkins = op.debrief._checkins;
+  }
+  if(op && !Array.isArray(op.checkins)) op.checkins = [];
   renderOpDetail(op, operators || []);
   updateFab('operations');
 }
@@ -1331,6 +1335,7 @@ function renderOpDetail(op, operators){
   renderMapPins(operators);
   renderStacks(op);
   renderMapMarkers(op);
+  renderCheckins(op);
   renderPlan(op);
   renderOpsLog(op);
   renderDebrief(op);
@@ -1416,6 +1421,31 @@ function getCurrentPositionOnce(){
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   });
+}
+
+
+function mapsLinkFor(lat, lng){
+  if(lat == null || lng == null) return '';
+  return `https://maps.google.com/?q=${lat},${lng}`;
+}
+function renderCheckins(op){
+  const host = $('#checkinList');
+  if(!host) return;
+  const rows = Array.isArray(op.checkins) ? op.checkins : [];
+  if(!rows.length){
+    host.innerHTML = `<div style="font-size:12px;color:var(--text-dim);">No check-ins yet.</div>`;
+    return;
+  }
+  host.innerHTML = rows.map(c => {
+    const t = new Date(c.ts);
+    const time = isNaN(t) ? '' : t.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const has = c.lat != null && c.lng != null;
+    const loc = has ? `${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}` : 'No GPS';
+    const link = has ? ` <a href="${mapsLinkFor(c.lat,c.lng)}" target="_blank" rel="noopener" style="color:var(--olive-bright);">Open map</a>` : '';
+    return `<div class="stack-member-row" style="align-items:flex-start;">
+      <div class="stack-member-name"><strong>${c.name||'Operator'}</strong><div style="font-size:11px;color:var(--text-dim);">${time} · ${loc}${link}</div></div>
+    </div>`;
+  }).join('');
 }
 
 async function checkIntoCurrentOp(){
@@ -2997,6 +3027,16 @@ async function generateOpPresentation(op){
         slide.addText(`${u.name || 'Team'}${cmd ? ' — ' + cmd.name : ''}`, { x: MARGIN, y, fontSize: 13, color: 'e8e6df' });
         y += 0.3;
       });
+      const cis = op.checkins || [];
+      if(cis.length){
+        y += 0.15;
+        slide.addText('Check-ins', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.3;
+        cis.slice(0,8).forEach(c => {
+          const loc = (c.lat!=null && c.lng!=null) ? (Number(c.lat).toFixed(5)+', '+Number(c.lng).toFixed(5)) : 'no GPS';
+          slide.addText(`${c.name||'Operator'} — ${loc}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' });
+          y += 0.26;
+        });
+      }
     }
 
     if(opt.map !== false){
