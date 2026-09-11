@@ -1054,6 +1054,7 @@ let currentOpId = null;
 let currentOpCache = null;
 let currentOperatorsCache = [];
 let dashPlaceMode = null;
+let dashSelected = null;
 let armedOperatorId = null;
 
 async function openOpDetail(opId){
@@ -1091,25 +1092,34 @@ function renderOpDetail(op, operators){
     <div class="subtab-row">
       <div class="subtab active" data-subtab="map">Map</div>
       <div class="subtab" data-subtab="plan">Pre-Ops Plan</div>
-      <div class="subtab" data-subtab="log">In-Ops Log</div>
+      <div class="subtab" data-subtab="log">Notes / Log</div>
+      <div class="subtab" data-subtab="chat">Op Chat</div>
       <div class="subtab" data-subtab="debrief">Debrief</div>
       <div class="subtab" data-subtab="callouts">Callouts</div>
     </div>
     <div class="subpanel active" id="opPanel-map">
       <div class="dash-map-tools">
-        <input type="text" class="field-input" id="dashMapAddress" placeholder="Address" style="flex:1; min-width:220px;" value="${(op.location||'').replace(/"/g,'&quot;')}">
+        <input type="text" class="field-input" id="dashMapAddress" placeholder="Jump to address" style="flex:1; min-width:220px;" value="${(op.location||'').replace(/"/g,'&quot;')}">
         <button type="button" class="btn btn-outline" id="dashMapGo">Go</button>
+        <label class="list-row-meta" style="display:flex; align-items:center; gap:8px;">Rotate
+          <input type="range" id="dashRotate" min="0" max="360" value="0" style="width:140px;">
+          <span id="dashRotateDeg">0°</span>
+        </label>
+        <button type="button" class="btn btn-danger-outline" id="dashRemovePin" style="font-size:12px;">Remove selected</button>
       </div>
       <div id="dashLiveMap"></div>
       <div class="op-palette" id="opPalette"></div>
       <div id="dashStackEditor" style="margin-top:16px;"></div>
-      <div id="dashCheckins" style="margin-top:16px;"></div>
+      
     </div>
     <div class="subpanel" id="opPanel-plan">
       <div id="planFields"></div>
     </div>
     <div class="subpanel" id="opPanel-log">
       <div id="dashOpsLog"></div>
+    </div>
+    <div class="subpanel" id="opPanel-chat">
+      <div id="dashOpChat"></div>
     </div>
     <div class="subpanel" id="opPanel-debrief">
       <div id="debriefContent"></div>
@@ -1145,6 +1155,7 @@ function renderOpDetail(op, operators){
     $$('.subpanel').forEach(p => p.classList.toggle('active', p.id === `opPanel-${tab.dataset.subtab}`));
     if(tab.dataset.subtab === 'callouts') renderOpCallouts(op.id);
     if(tab.dataset.subtab === 'log') renderDashOpsLog(currentOpCache || op);
+    if(tab.dataset.subtab === 'chat') loadDashChat();
     if(tab.dataset.subtab === 'map' && dashLiveMap) setTimeout(() => dashLiveMap.invalidateSize(), 80);
   }));
 
@@ -1154,7 +1165,7 @@ function renderOpDetail(op, operators){
   renderDebrief(op, editable);
   setTimeout(() => initDashLiveMap(op), 80);
   renderDashStacks(op);
-  renderDashCheckins(op);
+
 }
 
 async function renderExistingMapImage(op){
@@ -1339,6 +1350,10 @@ function renderPlan(op, editable){
       <select id="opCommanderSelect" ${!editable?'disabled':''}>${commanderOptions}</select>
     </div>
     <div class="field-group">
+      <label class="field-label">Attached teams</label>
+      <div id="planUnitsBox"></div>
+    </div>
+    <div class="field-group">
       <label class="field-label">Assets Utilized</label>
       <div id="opAssetsChecklist" style="font-size:12.5px; color:var(--text-dim);">Loading...</div>
     </div>
@@ -1351,6 +1366,7 @@ function renderPlan(op, editable){
 
   loadTargetPhotos(op.id, editable);
   loadOpAssets(op.id, editable);
+  renderDashAttachedUnits(op, editable);
 
   if(editable){
     $('#opCommanderSelect').addEventListener('change', async () => {
@@ -2279,6 +2295,34 @@ function initDashLiveMap(op){
   if(go) go.onclick = () => focusDashOp({ ...currentOpCache, location: inp && inp.value });
   if(inp) inp.addEventListener('keydown', (e) => { if(e.key==='Enter') focusDashOp({ ...currentOpCache, location: inp.value }); });
   setTimeout(() => dashLiveMap.invalidateSize(), 200);
+  const rot = document.getElementById('dashRotate');
+  const deg = document.getElementById('dashRotateDeg');
+  const rm = document.getElementById('dashRemovePin');
+  if(rot) rot.oninput = async () => {
+    if(deg) deg.textContent = rot.value + '°';
+    if(!dashSelected || !currentOpCache) return;
+    const val = Number(rot.value)||0;
+    if(dashSelected.kind==='marker'){
+      await saveDashMarkers((currentOpCache.map_markers||[]).map(m => String(m.id)===String(dashSelected.id) ? { ...m, rot:val } : m));
+    } else if(dashSelected.kind==='stack'){
+      await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(dashSelected.id) ? { ...s, rot:val } : s));
+    }
+    rebuildDashMarkers(currentOpCache);
+  };
+  if(rm) rm.onclick = async () => {
+    if(!dashSelected) return;
+    if(dashSelected.kind==='marker') await saveDashMarkers((currentOpCache.map_markers||[]).filter(m => String(m.id)!==String(dashSelected.id)));
+    if(dashSelected.kind==='stack') await saveDashStacks((currentOpCache.map_stacks||[]).filter(s => String(s.id)!==String(dashSelected.id)));
+    if(dashSelected.kind==='pin'){
+      await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', dashSelected.id);
+      const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+      currentOperatorsCache = refreshed || [];
+    }
+    dashSelected = null;
+    rebuildDashMarkers(currentOpCache);
+    renderMapPalette(currentOpCache, currentOperatorsCache, true);
+  };
+
 }
 async function onDashMapClick(e){
   if(!canEditOps() || !currentOpCache) return;
@@ -2291,7 +2335,7 @@ async function onDashMapClick(e){
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
     renderDashStacks(currentOpCache);
-    renderDashCheckins(currentOpCache);
+
     return;
   }
   if(dashPlaceMode){
@@ -2303,7 +2347,7 @@ async function onDashMapClick(e){
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
     renderDashStacks(currentOpCache);
-    renderDashCheckins(currentOpCache);
+
     return;
   }
   if(armedOperatorId){
@@ -2316,7 +2360,7 @@ async function onDashMapClick(e){
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
     renderDashStacks(currentOpCache);
-    renderDashCheckins(currentOpCache);
+
   }
 }
 async function focusDashOp(op){
@@ -2333,6 +2377,7 @@ function rebuildDashMarkers(op){
   (op.map_markers||[]).forEach(mk => {
     if(mk.lat == null) return;
     const m = L.marker([mk.lat, mk.lng], { icon: dashIcon(mk.label||mk.type, colorFor(mk.type)), draggable: editable });
+    m.on('click', () => { dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
     m.bindPopup(`${mk.label||mk.type}<br><button type="button" class="btn btn-danger-outline" data-rm-marker="${mk.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-marker="'+mk.id+'"]');
@@ -2520,5 +2565,99 @@ function renderDashCheckins(op){
     const link = (c.lat!=null) ? mapsLinkHtml(`${c.lat},${c.lng}`, 'Map') : '';
     return `<div class="list-row" style="cursor:default;"><div class="list-row-title">${c.name||'Operator'}</div><div class="list-row-meta">${gps}${link}</div></div>`;
   }).join('');
+}
+
+
+function subTeamById(id){ return allSubteams.find(t => t.id === id); }
+async function saveAttachedUnits(units){
+  currentOpCache.attached_units = units;
+  const { error } = await supabaseClient.from('operations').update({ attached_units: units }).eq('id', currentOpId);
+  if(error){
+    const debrief = { ...(currentOpCache.debrief || {}), _attached_units: units };
+    await supabaseClient.from('operations').update({ debrief }).eq('id', currentOpId);
+    currentOpCache.debrief = debrief;
+  }
+}
+function renderDashAttachedUnits(op, editable){
+  const el = document.getElementById('planUnitsBox');
+  if(!el) return;
+  const units = Array.isArray(op.attached_units) ? op.attached_units : [];
+  const used = new Set(units.map(u => u.subteam_id).filter(Boolean));
+  const rows = units.map((u, idx) => {
+    const name = u.name || 'Team';
+    return `<div class="list-row" style="cursor:default; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      ${editable ? `<input class="field-input" data-unit-name="${idx}" value="${String(name).replace(/"/g,'&quot;')}" style="max-width:200px;">` : `<strong>${name}</strong>`}
+      ${editable ? `<select class="field-input" data-unit-cmd="${idx}" style="max-width:200px;"><option value="">Commander…</option>${allPersonnel.map(p => `<option value="${p.id}" ${u.commander_personnel_id===p.id?'selected':''}>${p.name}</option>`).join('')}</select>` : ''}
+      ${editable ? `<button type="button" class="btn btn-ghost" data-unit-del="${idx}">Remove</button>` : ''}
+    </div>`;
+  }).join('') || '<div class="list-row-meta">No specialty teams attached.</div>';
+  const unused = allSubteams.filter(t => !used.has(t.id));
+  el.innerHTML = rows + (editable ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+    <select class="field-input" id="attachExistingUnit" style="max-width:220px;"><option value="">Attach existing team…</option>${unused.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
+    <button type="button" class="btn btn-outline" id="attachUnitBtn">Attach</button>
+    <input class="field-input" id="newUnitName" placeholder="Or name a team" style="max-width:180px;">
+    <button type="button" class="btn btn-primary" id="createUnitBtn">Add team</button>
+  </div>` : '');
+  if(!editable) return;
+  $$('[data-unit-name]').forEach(inp => inp.addEventListener('blur', async () => {
+    const idx = Number(inp.dataset.unitName);
+    const next = units.map((u,i) => i===idx ? { ...u, name: inp.value.trim() || u.name } : u);
+    await saveAttachedUnits(next);
+  }));
+  $$('[data-unit-cmd]').forEach(sel => sel.addEventListener('change', async () => {
+    const idx = Number(sel.dataset.unitCmd);
+    const next = units.map((u,i) => i===idx ? { ...u, commander_personnel_id: sel.value || null } : u);
+    await saveAttachedUnits(next);
+  }));
+  $$('[data-unit-del]').forEach(btn => btn.addEventListener('click', async () => {
+    const idx = Number(btn.dataset.unitDel);
+    await saveAttachedUnits(units.filter((_,i) => i!==idx));
+    renderDashAttachedUnits(currentOpCache, true);
+  }));
+  const attachBtn = document.getElementById('attachUnitBtn');
+  if(attachBtn) attachBtn.onclick = async () => {
+    const id = document.getElementById('attachExistingUnit').value;
+    const team = subTeamById(id);
+    if(!team) return;
+    await saveAttachedUnits([...units, { subteam_id: team.id, name: team.name, commander_personnel_id: team.leader_personnel_id || null }]);
+    renderDashAttachedUnits(currentOpCache, true);
+  };
+  const createBtn = document.getElementById('createUnitBtn');
+  if(createBtn) createBtn.onclick = async () => {
+    const name = (document.getElementById('newUnitName').value || '').trim();
+    if(!name) return;
+    await saveAttachedUnits([...units, { name }]);
+    renderDashAttachedUnits(currentOpCache, true);
+  };
+}
+
+let dashChatRows = [];
+function renderDashChat(){
+  const el = document.getElementById('dashOpChat');
+  if(!el) return;
+  const list = dashChatRows.map(m => {
+    const t = new Date(m.created_at);
+    const time = isNaN(t) ? '' : t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    return `<div class="list-row" style="cursor:default;"><div class="list-row-title">${m.author_name||'Operator'} · ${time}</div><div class="list-row-meta">${(m.body||'').replace(/</g,'&lt;')}</div></div>`;
+  }).join('') || '<div class="empty-state">No messages on this operation yet.</div>';
+  el.innerHTML = list + `<div style="display:flex; gap:8px; margin-top:12px;"><input class="field-input" id="dashChatInput" placeholder="Message this operation..."><button class="btn btn-primary" id="dashChatSend">Send</button></div>`;
+  const send = async () => {
+    const input = document.getElementById('dashChatInput');
+    const body = (input && input.value || '').trim();
+    if(!body) return;
+    const { data, error } = await supabaseClient.from('operation_messages').insert({
+      agency_id: currentProfile.agency_id, operation_id: currentOpId,
+      author_name: currentProfile.full_name, author_user_id: currentProfile.id, body
+    }).select().single();
+    if(error){ alert('Chat table missing. Same SQL as the field app operation_messages table.'); return; }
+    if(data) dashChatRows.push(data);
+    renderDashChat();
+  };
+  document.getElementById('dashChatSend').onclick = send;
+}
+async function loadDashChat(){
+  const { data } = await supabaseClient.from('operation_messages').select('*').eq('operation_id', currentOpId).order('created_at').limit(200);
+  dashChatRows = data || [];
+  renderDashChat();
 }
 
