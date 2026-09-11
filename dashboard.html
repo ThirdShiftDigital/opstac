@@ -4,15 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OpsTac — Command Dashboard</title>
-<script>
-(function(){
-  try {
-    if(!/[\?&]stay(?:=|&|$)/.test(location.search)){
-      location.replace('app.html' + location.search + location.hash);
-    }
-  } catch(e){}
-})();
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -262,6 +253,12 @@
   .swatch{ width:32px; height:32px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
   .swatch.selected{ border-color:var(--text); }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  #dashLiveMap{ height:70vh; min-height:520px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px; }
+  .dash-map-tools{ display:flex; gap:8px; align-items:center; margin:10px 0 12px; flex-wrap:wrap; }
+</style>
 </head>
 <body>
 
@@ -374,6 +371,7 @@
     </nav>
     <div class="sidebar-footer">
       <div class="user-chip"><strong id="userNameLabel"></strong><span id="userRoleLabel"></span></div>
+      <a href="app.html" style="display:block; font-size:12px; color:var(--olive-bright); margin-bottom:10px; text-decoration:none;">Open field app</a>
       <div class="signout-btn" id="signOutBtn">Sign out</div>
     </div>
   </aside>
