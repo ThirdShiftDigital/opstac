@@ -195,6 +195,10 @@ $('#signOutBtn').addEventListener('click', async () => {
 });
 
 async function onSignedIn(){
+  if(!new URLSearchParams(location.search).has('stay')){
+    window.location.replace('app.html');
+    return;
+  }
   const { data: { user } } = await supabaseClient.auth.getUser();
   if(!user) return;
 
