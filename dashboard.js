@@ -178,7 +178,7 @@ $('#forgotSubmitBtn').addEventListener('click', async () => {
   const btn = $('#forgotSubmitBtn');
   btn.disabled = true; btn.textContent = 'Sending...';
   const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin + '/dashboard.html',
+    redirectTo: window.location.origin + '/app.html',
   });
   btn.disabled = false; btn.textContent = 'Send Reset Link';
   if(error){

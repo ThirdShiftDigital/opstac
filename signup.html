@@ -254,7 +254,7 @@
     <div class="success-box" id="successView">
       <h2 id="successHeading">Agency Created</h2>
       <p id="successText">Your OpsTac agency account is ready. Signing you in...</p>
-      <a class="btn btn-primary" href="dashboard.html" id="goToDashboardBtn" style="display:none; margin-top:20px; text-decoration:none; display:inline-block;">Go to Dashboard</a>
+      <a class="btn btn-primary" href="app.html" id="goToDashboardBtn" style="display:none; margin-top:20px; text-decoration:none; display:inline-block;">Open App</a>
     </div>
   </div>
 
@@ -266,7 +266,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // accidentally spin up a second, unrelated agency — send them to the
 // real app instead.
 supabaseClient.auth.getSession().then(({ data: { session } }) => {
-  if(session) window.location.href = 'dashboard.html';
+  if(session) window.location.href = 'app.html';
 });
 
 document.getElementById('choiceStart').addEventListener('click', () => {
@@ -524,8 +524,8 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
       }
     }
 
-    document.getElementById('successText').textContent = 'Taking you to your dashboard...';
-    window.location.href = 'dashboard.html';
+    document.getElementById('successText').textContent = 'Taking you to the app...';
+    window.location.href = 'app.html';
   } catch (err) {
     showError('Network error — please check your connection and try again.');
     btn.disabled = false;
