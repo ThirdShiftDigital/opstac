@@ -1107,7 +1107,7 @@ function renderOpDetail(op, operators){
         </label>
         <button type="button" class="btn btn-danger-outline" id="dashRemovePin" style="font-size:12px;">Remove selected</button>
       </div>
-      <div id="dashLiveMap"></div>
+      <div id="dashLiveMap" style="height:70vh; min-height:520px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
       <div class="op-palette" id="opPalette"></div>
       <div id="dashStackEditor" style="margin-top:16px;"></div>
       
@@ -1159,12 +1159,10 @@ function renderOpDetail(op, operators){
     if(tab.dataset.subtab === 'map' && dashLiveMap) setTimeout(() => dashLiveMap.invalidateSize(), 80);
   }));
 
-  renderMapPalette(op, operators, editable);
-  renderMapPins(operators);
-  renderPlan(op, editable);
-  renderDebrief(op, editable);
-  setTimeout(() => initDashLiveMap(op), 80);
-  renderDashStacks(op);
+  try { renderPlan(op, editable); } catch(e){ console.error('plan', e); }
+  try { renderDebrief(op, editable); } catch(e){ console.error('debrief', e); }
+  try { renderMapPalette(op, operators, editable); } catch(e){ console.error('palette', e); }
+  setTimeout(() => { try { initDashLiveMap(op); renderDashStacks(op); } catch(e){ console.error('map', e); } }, 80);
 
 }
 
@@ -1259,8 +1257,9 @@ function renderMapPalette(op, operators, editable){
 }
 
 function renderMapPins(operators){
-  $$('.map-pin').forEach(p => p.remove());
   const canvas = $('#mapCanvas');
+  if(!canvas) return;
+  $$('.map-pin').forEach(p => p.remove());
   operators.forEach(o => {
     const m = memberById(o.member_id);
     if(!m) return;
