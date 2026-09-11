@@ -1055,6 +1055,7 @@ let currentOpCache = null;
 let currentOperatorsCache = [];
 let dashPlaceMode = null;
 let dashSelected = null;
+let pendingStack = null;
 let armedOperatorId = null;
 
 async function openOpDetail(opId){
@@ -1109,6 +1110,7 @@ function renderOpDetail(op, operators){
       </div>
       <div id="dashLiveMap" style="height:70vh; min-height:520px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
       <div class="op-palette" id="opPalette"></div>
+      <div id="dashStackEditor" style="margin-top:16px;"></div>
       
       
     </div>
@@ -2365,15 +2367,14 @@ function initDashLiveMap(op){
 async function onDashMapClick(e){
   if(!canEditOps() || !currentOpCache) return;
   const { lat, lng } = e.latlng;
-  if(dashPlaceMode === 'entry'){
-    const stacks = currentOpCache.map_stacks || [];
-    stacks.push({ id: Date.now().toString(36), name: 'Entry ' + (stacks.length+1), lat, lng, members: [] });
-    await saveDashStacks(stacks);
-    dashPlaceMode = null;
+  if(pendingStack){
+    const st = { ...pendingStack, lat, lng, id: pendingStack.id || Date.now().toString(36) };
+    const rest = (currentOpCache.map_stacks||[]).filter(s => String(s.id)!==String(st.id));
+    await saveDashStacks([...rest, st]);
+    pendingStack = null;
     rebuildDashMarkers(currentOpCache);
+    renderDashStacks(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
-
-
     return;
   }
   if(dashPlaceMode){
@@ -2550,48 +2551,77 @@ function renderDashStacks(op){
   const el = document.getElementById('dashStackEditor');
   if(!el) return;
   const stacks = op.map_stacks || [];
-  if(!stacks.length){ el.innerHTML = ''; return; }
-  el.innerHTML = '<div class="page-title" style="font-size:16px; margin-bottom:8px;">Stacks</div>' + stacks.map(st => {
+  const peopleOpts = allPersonnel.map(p => `<option value="${p.id}">${operatorUnitLabel(p)} · ${p.name}</option>`).join('');
+  const cards = stacks.map(st => {
     const members = st.members || [];
-    const opts = allPersonnel.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     const rows = members.map((m,i) => {
       const person = memberById(m.member_id);
-      return `<div style="display:flex; gap:8px; align-items:center; margin:4px 0;">
-        <span class="list-row-meta">${i+1}.</span>
+      return `<div style="display:flex; gap:8px; align-items:center; padding:4px 0;">
+        <span class="list-row-meta" style="width:18px;">${i+1}</span>
         <span>${person ? person.name : 'Unknown'}</span>
-        <button type="button" class="btn btn-ghost" data-stack="${st.id}" data-rm="${i}" style="font-size:11px;">Remove</button>
+        <button type="button" class="btn btn-ghost" data-st="${st.id}" data-rm="${i}" style="margin-left:auto; font-size:11px;">×</button>
       </div>`;
-    }).join('');
+    }).join('') || '<div class="list-row-meta">No one assigned yet.</div>';
+    const placed = st.lat != null;
     return `<div class="list-row" style="cursor:default;">
-      <div class="list-row-title">${st.name || 'Stack'}</div>
-      ${rows || '<div class="list-row-meta">No operators in this stack yet.</div>'}
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input class="field-input" data-st-name="${st.id}" value="${String(st.name||'Stack').replace(/"/g,'&quot;')}" style="max-width:220px; font-weight:600;">
+        <span class="pill ${placed?'good':'warn'}"><span class="pill-dot"></span>${placed?'On map':'Not placed'}</span>
+        <button type="button" class="btn btn-outline" data-st-place="${st.id}" style="font-size:12px;">${placed?'Move on map':'Place on map'}</button>
+        <button type="button" class="btn btn-danger-outline" data-st-del="${st.id}" style="font-size:12px;">Delete</button>
+      </div>
+      ${rows}
       <div style="display:flex; gap:8px; margin-top:8px;">
-        <select class="field-input" data-add-sel="${st.id}" style="max-width:240px;"><option value="">Add operator…</option>${opts}</select>
-        <button type="button" class="btn btn-outline" data-add="${st.id}">Add</button>
+        <select class="field-input" data-st-addsel="${st.id}" style="max-width:260px;"><option value="">Add operator in order…</option>${peopleOpts}</select>
+        <button type="button" class="btn btn-primary" data-st-add="${st.id}" style="font-size:12px;">Add</button>
       </div>
     </div>`;
   }).join('');
-  el.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = btn.dataset.add;
-    const sel = el.querySelector('[data-add-sel="'+id+'"]');
-    const memberId = sel && sel.value;
-    if(!memberId) return;
-    const next = (currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: [...(s.members||[]), { member_id: memberId }] } : s);
-    await saveDashStacks(next);
-
+  el.innerHTML = `<div class="page-title" style="font-size:16px; margin:8px 0;">Entry stacks</div>
+    <div class="list-row-meta" style="margin-bottom:8px;">Build the lineup here, then Place on map. Same stack mark as the phone.</div>
+    ${cards}
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <input class="field-input" id="newStackName" placeholder="Stack name (Entry 1, Bravo…)" style="max-width:240px;">
+      <button type="button" class="btn btn-primary" id="newStackBtn">New stack</button>
+    </div>`;
+  const mk = document.getElementById('newStackBtn');
+  if(mk) mk.onclick = async () => {
+    const name = (document.getElementById('newStackName').value || '').trim() || ('Entry ' + (stacks.length+1));
+    await saveDashStacks([...stacks, { id: Date.now().toString(36), name, members: [] }]);
+    renderDashStacks(currentOpCache);
+  };
+  el.querySelectorAll('[data-st-name]').forEach(inp => inp.addEventListener('blur', async () => {
+    const id = inp.dataset.stName;
+    await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, name: inp.value.trim() || s.name } : s));
+  }));
+  el.querySelectorAll('[data-st-add]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = btn.dataset.stAdd;
+    const sel = el.querySelector('[data-st-addsel="'+id+'"]');
+    if(!sel || !sel.value) return;
+    await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: [...(s.members||[]), { member_id: sel.value }] } : s));
+    renderDashStacks(currentOpCache);
   }));
   el.querySelectorAll('[data-rm]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = btn.dataset.stack;
+    const id = btn.dataset.st;
     const idx = Number(btn.dataset.rm);
-    const next = (currentOpCache.map_stacks||[]).map(s => {
-      if(String(s.id)!==String(id)) return s;
-      const members = (s.members||[]).filter((_,i) => i!==idx);
-      return { ...s, members };
-    });
-    await saveDashStacks(next);
-
+    await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: (s.members||[]).filter((_,i)=>i!==idx) } : s));
+    renderDashStacks(currentOpCache);
+  }));
+  el.querySelectorAll('[data-st-place]').forEach(btn => btn.addEventListener('click', () => {
+    const st = (currentOpCache.map_stacks||[]).find(s => String(s.id)===String(btn.dataset.stPlace));
+    if(!st) return;
+    pendingStack = { ...st };
+    const hint = document.getElementById('dashMapHint');
+    if(hint) hint.textContent = 'Click the map to place ' + (st.name||'stack');
+  }));
+  el.querySelectorAll('[data-st-del]').forEach(btn => btn.addEventListener('click', async () => {
+    if(!confirm('Delete this stack?')) return;
+    await saveDashStacks((currentOpCache.map_stacks||[]).filter(s => String(s.id)!==String(btn.dataset.stDel)));
+    rebuildDashMarkers(currentOpCache);
+    renderDashStacks(currentOpCache);
   }));
 }
+
 
 function renderDashCheckins(op){
   const el = document.getElementById('dashCheckins');
