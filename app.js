@@ -454,6 +454,10 @@ function listenForCalloutAlerts(){
 }
 
 async function onSignedIn(){
+  if(window.innerWidth >= 900 && !new URLSearchParams(location.search).has('field')){
+    window.location.replace('dashboard.html');
+    return;
+  }
   const { data: { user } } = await supabaseClient.auth.getUser();
   if(!user) return;
 
@@ -488,7 +492,8 @@ async function onSignedIn(){
 
   $('#loginScreen').style.display = 'none';
   $('#setPasswordScreen').style.display = 'none';
-  $('#appShell').style.display = 'flex';
+  $('#appShell').style.display = '';
+  $('#appShell').classList.add('is-open');
 
   renderPermissionsSettings();
   loadPendingJoinRequests();
