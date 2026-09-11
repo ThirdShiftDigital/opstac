@@ -195,10 +195,6 @@ $('#signOutBtn').addEventListener('click', async () => {
 });
 
 async function onSignedIn(){
-  if(!new URLSearchParams(location.search).has('stay')){
-    window.location.replace('app.html');
-    return;
-  }
   const { data: { user } } = await supabaseClient.auth.getUser();
   if(!user) return;
 
@@ -1091,14 +1087,12 @@ function renderOpDetail(op, operators){
       <div class="subtab" data-subtab="callouts">Callouts</div>
     </div>
     <div class="subpanel active" id="opPanel-map">
-      <div class="op-palette" id="opPalette"></div>
-      <input type="file" accept="image/*" id="mapImageInput" style="display:none;">
-      <div class="map-canvas" id="mapCanvas">
-        <div class="map-upload-prompt" id="mapUploadPrompt" style="${op.map_image_url ? 'display:none;' : ''}">
-          <span>Upload a scene photo or satellite screenshot</span>
-        </div>
-        <img id="mapBgImage" style="${op.map_image_url ? 'display:block;' : ''}">
+      <div class="dash-map-tools">
+        <input type="text" class="field-input" id="dashMapAddress" placeholder="Address" style="flex:1; min-width:220px;" value="${(op.location||'').replace(/"/g,'&quot;')}">
+        <button type="button" class="btn btn-outline" id="dashMapGo">Go</button>
       </div>
+      <div id="dashLiveMap"></div>
+      <div class="op-palette" id="opPalette"></div>
     </div>
     <div class="subpanel" id="opPanel-plan">
       <div id="planFields"></div>
@@ -1140,10 +1134,9 @@ function renderOpDetail(op, operators){
 
   renderMapPalette(op, operators, editable);
   renderMapPins(operators);
-  renderExistingMapImage(op);
-  wireMapUpload(op, editable);
   renderPlan(op, editable);
   renderDebrief(op, editable);
+  setTimeout(() => initDashLiveMap(op), 80);
 }
 
 async function renderExistingMapImage(op){
@@ -1633,9 +1626,10 @@ async function loadCallouts(){
       </div>`;
     }).join('');
     const editBtn = canManageCallouts() ? `<button class="btn btn-ghost" data-edit-callout="${c.id}" style="position:absolute; top:14px; right:18px; padding:5px 12px; font-size:11.5px;">Edit</button>` : '';
+    const standBtn = canManageCallouts() && c.mode !== 'standdown' ? `<button class="btn btn-ghost" data-standdown="${c.id}" style="position:absolute; top:14px; right:78px; padding:5px 12px; font-size:11.5px;">Stand Down</button>` : '';
     return `<div class="list-row" style="cursor:default; position:relative;">
       <span class="pill ${modeCls}"><span class="pill-dot"></span>${c.mode==='deploy'?'Deploy':'Standby'}</span>
-      ${editBtn}
+      ${standBtn}${editBtn}
       <div class="list-row-title">${c.type||'Callout'}</div>
       <div class="list-row-meta">${c.date||''} ${c.location?'· '+c.location:''}${mapsLinkHtml(c.location)} · ${acked}/${total} acknowledged</div>
       ${c.rally_location ? `<div class="list-row-meta" style="margin-top:2px;">Rally: ${c.rally_location}${mapsLinkHtml(c.rally_location)}</div>` : ''}
@@ -1646,6 +1640,12 @@ async function loadCallouts(){
     </div>`;
   }).join('');
 
+  $$('[data-standdown]').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if(!confirm('Stand down this callout and notify the team?')) return;
+    await supabaseClient.from('callouts').update({ mode:'standdown', active:false, message:'SRT STAND DOWN. Return to normal status. Do not respond.' }).eq('id', btn.dataset.standdown);
+    loadCallouts();
+  }));
   $$('[data-edit-callout]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     openEditCalloutModal(callouts.find(c => c.id === btn.dataset.editCallout));
@@ -2172,3 +2172,65 @@ $('#setPasswordForm').addEventListener('submit', async (e) => {
 });
 
 checkExistingSession();
+
+
+let dashLiveMap = null, dashLiveLayer = null, dashCurrentOp = null;
+async function geocodeAddress(q){
+  if(!q) return null;
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } });
+    const rows = await r.json();
+    if(rows && rows[0]) return { lat: Number(rows[0].lat), lng: Number(rows[0].lon) };
+  } catch(e){}
+  return null;
+}
+function initDashLiveMap(op){
+  dashCurrentOp = op;
+  const el = document.getElementById('dashLiveMap');
+  if(!el || !window.L) return;
+  if(dashLiveMap){ try { dashLiveMap.remove(); } catch(e){} dashLiveMap = null; }
+  dashLiveMap = L.map(el, { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(dashLiveMap);
+  dashLiveLayer = L.layerGroup().addTo(dashLiveMap);
+  dashLiveMap.setView([36.208, -86.291], 17);
+  rebuildDashMarkers(op);
+  focusDashOp(op);
+  const go = document.getElementById('dashMapGo');
+  const inp = document.getElementById('dashMapAddress');
+  if(go) go.onclick = () => focusDashOp({ ...op, location: inp && inp.value });
+  if(inp) inp.addEventListener('keydown', (e) => { if(e.key === 'Enter') focusDashOp({ ...op, location: inp.value }); });
+  setTimeout(() => dashLiveMap.invalidateSize(), 200);
+}
+async function focusDashOp(op){
+  if(!dashLiveMap) return;
+  const pts = [].concat(op.map_markers||[], op.map_stacks||[]).filter(x => x && x.lat != null);
+  if(pts.length){
+    dashLiveMap.setView([pts[0].lat, pts[0].lng], 18);
+    return;
+  }
+  const hit = await geocodeAddress(op.location || '');
+  if(hit) dashLiveMap.setView([hit.lat, hit.lng], 18);
+}
+function dashIcon(label, color){
+  const t = String(label||'').slice(0,8);
+  return L.divIcon({
+    className: 'dash-pin',
+    html: `<div style="transform:translate(-50%,-50%);background:${color};color:#0c0e0c;font:700 11px Inter,sans-serif;padding:4px 7px;border-radius:4px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.5)">${t}</div>`,
+    iconSize: [0,0], iconAnchor: [0,0]
+  });
+}
+function rebuildDashMarkers(op){
+  if(!dashLiveLayer) return;
+  dashLiveLayer.clearLayers();
+  (op.map_markers||[]).forEach(mk => {
+    if(mk.lat == null) return;
+    L.marker([mk.lat, mk.lng], { icon: dashIcon(mk.label || mk.type, mk.type==='ems'?'#c45c5c': mk.type==='lz'?'#7ec8e3':'#d4b86a') })
+      .bindPopup(mk.label || mk.type || 'Mark').addTo(dashLiveLayer);
+  });
+  (op.map_stacks||[]).forEach(st => {
+    if(st.lat == null) return;
+    L.marker([st.lat, st.lng], { icon: dashIcon(st.name || 'Entry', '#e4c35a') })
+      .bindPopup(st.name || 'Stack').addTo(dashLiveLayer);
+  });
+}
+
