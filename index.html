@@ -359,7 +359,7 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#flexible">Built For Your Team</a>
-      <a class="btn btn-outline" href="app.html">Sign In</a>
+      <a class="btn btn-outline" href="app.html" id="signInLink">Sign In</a>
       <a class="btn btn-primary" href="signup.html">Get Started</a>
     </div>
   </div>
@@ -450,5 +450,11 @@
   <p>OpsTac is a Third Shift Digital product. &copy; 2026 Third Shift Digital.</p>
 </footer>
 
+<script>
+(function(){
+  var a = document.getElementById('signInLink');
+  if(a && window.innerWidth >= 900) a.href = 'dashboard.html';
+})();
+</script>
 </body>
 </html>
