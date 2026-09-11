@@ -1109,7 +1109,7 @@ function renderOpDetail(op, operators){
       </div>
       <div id="dashLiveMap" style="height:70vh; min-height:520px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
       <div class="op-palette" id="opPalette"></div>
-      <div id="dashStackEditor" style="margin-top:16px;"></div>
+      
       
     </div>
     <div class="subpanel" id="opPanel-plan">
@@ -1225,7 +1225,6 @@ const DASH_LOCS = [
   { type:'vehicle', label:'Vehicle' },
   { type:'rally', label:'Rally' },
   { type:'staging', label:'Staging' },
-  { type:'entry', label:'Entry stack' },
 ];
 function operatorUnitLabel(person){
   if(!person) return '?';
@@ -1242,7 +1241,7 @@ function renderMapPalette(op, operators, editable){
   }).join('');
   $('#opPalette').innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 8px;">${loc}</div>
     <div style="display:flex; flex-wrap:wrap; gap:6px;">${people}</div>
-    <div class="list-row-meta" id="dashMapHint" style="margin-top:8px;">Tap a mark or operator, then click the map. Click an existing pin to remove it.</div>`;
+    <div class="list-row-meta" id="dashMapHint" style="margin-top:8px;">Select a type or person, click the map to place. Drag to move. Click a pin, then Remove selected.</div>`;
   if(!editable) return;
   $$('#opPalette [data-loc]').forEach(btn => btn.addEventListener('click', () => {
     dashPlaceMode = dashPlaceMode === btn.dataset.loc ? null : btn.dataset.loc;
@@ -2254,6 +2253,46 @@ async function geocodeAddress(q){
   } catch(e){}
   return null;
 }
+
+function liveGlyph(shape, label){
+  const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a';
+  if(shape === 'ems' || shape === 'medic'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#1a1212" stroke="${r}" stroke-width="2"/><rect x="14" y="8" width="4" height="16" fill="${r}"/><rect x="8" y="14" width="16" height="4" fill="${r}"/></svg>`;
+  }
+  if(shape === 'vehicle'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/><path d="M8 20 h16 l-3-8 h-10 z" fill="none" stroke="${a}" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="21" r="1.6" fill="${a}"/><circle cx="20" cy="21" r="1.6" fill="${a}"/></svg>`;
+  }
+  if(shape === 'lz'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="16" r="13" fill="#0c1a1e" stroke="${b}" stroke-width="2"/><path d="M11 9 v14 M21 9 v14 M11 16 h10" stroke="${b}" stroke-width="2.4" fill="none" stroke-linecap="square"/></svg>`;
+  }
+  if(shape === 'command'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/><path d="M16 7 v18 M16 7 l10 6 v5" fill="none" stroke="${a}" stroke-width="2"/><circle cx="16" cy="7" r="2" fill="${a}"/></svg>`;
+  }
+  if(shape === 'rally'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/><path d="M16 24 V10 M16 10 l7 4 v4" fill="none" stroke="${a}" stroke-width="2"/><circle cx="16" cy="10" r="2" fill="${a}"/></svg>`;
+  }
+  if(shape === 'staging'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/><rect x="8" y="8" width="16" height="16" fill="none" stroke="${a}" stroke-width="2" stroke-dasharray="3 2"/></svg>`;
+  }
+  if(shape === 'stack' || shape === 'entry'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${y}" stroke-width="2"/><circle cx="16" cy="9" r="2.4" fill="${y}"/><circle cx="16" cy="16" r="2.4" fill="${y}"/><circle cx="16" cy="23" r="2.4" fill="${y}"/></svg>`;
+  }
+  if(shape === 'person'){
+    const t = String(label||'?').slice(0,6);
+    const size = t.length > 4 ? 7 : t.length > 2 ? 9 : 11;
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="16" r="13" fill="#141814" stroke="${y}" stroke-width="2"/><text x="16" y="20" text-anchor="middle" font-size="${size}" font-weight="800" fill="${y}" font-family="Inter,Rajdhani,sans-serif">${t}</text></svg>`;
+  }
+  return `<svg viewBox="0 0 32 32" width="24" height="24"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/></svg>`;
+}
+function liveIcon(label, color, rot, shape){
+  const deg = Number(rot||0);
+  return L.divIcon({
+    className: 'live-map-icon',
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape, label)}</div>`,
+    iconSize:[0,0], iconAnchor:[0,0]
+  });
+}
+
 function dashIcon(label, color){
   const t = String(label||'').slice(0,10);
   return L.divIcon({
@@ -2333,7 +2372,7 @@ async function onDashMapClick(e){
     dashPlaceMode = null;
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
-    renderDashStacks(currentOpCache);
+
 
     return;
   }
@@ -2345,7 +2384,7 @@ async function onDashMapClick(e){
     dashPlaceMode = null;
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
-    renderDashStacks(currentOpCache);
+
 
     return;
   }
@@ -2358,7 +2397,7 @@ async function onDashMapClick(e){
     armedOperatorId = null;
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
-    renderDashStacks(currentOpCache);
+
 
   }
 }
@@ -2375,7 +2414,7 @@ function rebuildDashMarkers(op){
   const editable = canEditOps();
   (op.map_markers||[]).forEach(mk => {
     if(mk.lat == null) return;
-    const m = L.marker([mk.lat, mk.lng], { icon: dashIcon(mk.label||mk.type, colorFor(mk.type)), draggable: editable });
+    const m = L.marker([mk.lat, mk.lng], { icon: liveIcon(mk.label||mk.type, colorFor(mk.type), mk.rot, mk.type==='medic'?'ems':mk.type), draggable: editable });
     m.on('click', () => { dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
     m.bindPopup(`${mk.label||mk.type}<br><button type="button" class="btn btn-danger-outline" data-rm-marker="${mk.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
@@ -2393,7 +2432,7 @@ function rebuildDashMarkers(op){
   });
   (op.map_stacks||[]).forEach(st => {
     if(st.lat == null) return;
-    const m = L.marker([st.lat, st.lng], { icon: dashIcon(st.name||'Entry', '#e4c35a'), draggable: editable });
+    const m = L.marker([st.lat, st.lng], { icon: liveIcon(st.name||'Entry', '#e4c35a', st.rot, 'stack'), draggable: editable });
     m.bindPopup(`${st.name||'Stack'}<br><button type="button" class="btn btn-danger-outline" data-rm-stack="${st.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-stack="'+st.id+'"]');
@@ -2411,7 +2450,7 @@ function rebuildDashMarkers(op){
   (currentOperatorsCache||[]).forEach(o => {
     if(o.lat == null) return;
     const person = memberById(o.member_id);
-    const m = L.marker([o.lat, o.lng], { icon: dashIcon(operatorUnitLabel(person), '#e4c35a'), draggable: editable });
+    const m = L.marker([o.lat, o.lng], { icon: liveIcon(operatorUnitLabel(person), '#e4c35a', o.rot, 'person'), draggable: editable });
     const name = person ? person.name : 'Operator';
     m.bindPopup(`${name}<br><button type="button" class="btn btn-danger-outline" data-rm-pin="${o.member_id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
@@ -2539,7 +2578,7 @@ function renderDashStacks(op){
     if(!memberId) return;
     const next = (currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: [...(s.members||[]), { member_id: memberId }] } : s);
     await saveDashStacks(next);
-    renderDashStacks(currentOpCache);
+
   }));
   el.querySelectorAll('[data-rm]').forEach(btn => btn.addEventListener('click', async () => {
     const id = btn.dataset.stack;
@@ -2550,7 +2589,7 @@ function renderDashStacks(op){
       return { ...s, members };
     });
     await saveDashStacks(next);
-    renderDashStacks(currentOpCache);
+
   }));
 }
 
