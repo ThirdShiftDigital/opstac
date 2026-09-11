@@ -1820,7 +1820,7 @@ function ensureLiveMap(){
     setTimeout(() => liveMap.invalidateSize(), 80);
     return liveMap;
   }
-  liveMap = L.map(el, { zoomControl: true, attributionControl: false });
+  liveMap = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: false });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
     crossOrigin: true,
@@ -4109,7 +4109,7 @@ function ensureNamedMap(elId){
   const el = document.getElementById(elId);
   if(!el || !window.L) return null;
   if(calloutMaps[elId]){ setTimeout(() => calloutMaps[elId].invalidateSize(), 80); return calloutMaps[elId]; }
-  const map = L.map(el, { zoomControl: true, attributionControl: false });
+  const map = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: false });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(map);
   map.setView([36.208, -86.291], 16);
   calloutMaps[elId] = map;
