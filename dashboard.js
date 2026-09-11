@@ -1102,6 +1102,8 @@ function renderOpDetail(op, operators){
       </div>
       <div id="dashLiveMap"></div>
       <div class="op-palette" id="opPalette"></div>
+      <div id="dashStackEditor" style="margin-top:16px;"></div>
+      <div id="dashCheckins" style="margin-top:16px;"></div>
     </div>
     <div class="subpanel" id="opPanel-plan">
       <div id="planFields"></div>
@@ -1151,6 +1153,8 @@ function renderOpDetail(op, operators){
   renderPlan(op, editable);
   renderDebrief(op, editable);
   setTimeout(() => initDashLiveMap(op), 80);
+  renderDashStacks(op);
+  renderDashCheckins(op);
 }
 
 async function renderExistingMapImage(op){
@@ -1574,6 +1578,15 @@ async function exportOpPresentation(op, operators){
     }
     slide.addText(op.name, { x: MARGIN, y: 2.4, w: W-MARGIN*2, h: 1, fontSize: 32, bold: true, color: 'e8e6df', align: 'center' });
     slide.addText(`${op.type||''}  ·  ${op.date||''}  ·  ${op.location||''}`, { x: MARGIN, y: 3.4, w: W-MARGIN*2, h: 0.5, fontSize: 14, color: 'a89968', align: 'center' });
+
+    const mapShot = await snapshotDashMap(op);
+    if(mapShot){
+      const ms = pres.addSlide();
+      ms.background = { color: '0c0e0c' };
+      ms.addText('Map', { x: MARGIN, y: 0.2, fontSize: 22, bold: true, color: 'c7b482' });
+      ms.addText(op.location || '', { x: MARGIN, y: 0.52, fontSize: 12, color: 'a89968' });
+      ms.addImage({ data: mapShot, x: 0.4, y: 0.78, w: 9.2, h: 4.4 });
+    }
 
     const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
     slide = pres.addSlide();
@@ -2277,6 +2290,8 @@ async function onDashMapClick(e){
     dashPlaceMode = null;
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
+    renderDashStacks(currentOpCache);
+    renderDashCheckins(currentOpCache);
     return;
   }
   if(dashPlaceMode){
@@ -2287,6 +2302,8 @@ async function onDashMapClick(e){
     dashPlaceMode = null;
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
+    renderDashStacks(currentOpCache);
+    renderDashCheckins(currentOpCache);
     return;
   }
   if(armedOperatorId){
@@ -2298,6 +2315,8 @@ async function onDashMapClick(e){
     armedOperatorId = null;
     rebuildDashMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache, true);
+    renderDashStacks(currentOpCache);
+    renderDashCheckins(currentOpCache);
   }
 }
 async function focusDashOp(op){
@@ -2391,5 +2410,115 @@ function renderDashOpsLog(op){
     renderDashOpsLog(currentOpCache);
   };
   document.getElementById('dashLogAdd').onclick = add;
+}
+
+
+async function snapshotDashMap(op){
+  const pts = [].concat(op.map_markers||[], op.map_stacks||[], currentOperatorsCache||[]).filter(x => x && x.lat != null);
+  let lat, lng;
+  if(pts.length){ lat = Number(pts[0].lat); lng = Number(pts[0].lng); }
+  else {
+    const hit = await geocodeAddress(op.location || '');
+    if(hit){ lat = hit.lat; lng = hit.lng; }
+  }
+  if(lat == null) return '';
+  const d = 0.0035;
+  const bbox = [lng-d, lat-d, lng+d, lat+d].join(',');
+  const url = 'https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/export?bbox=' + encodeURIComponent(bbox) + '&bboxSR=4326&imageSR=4326&size=1600,900&format=jpg&f=image';
+  const canvas = document.createElement('canvas');
+  canvas.width = 1600; canvas.height = 900;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0b100d'; ctx.fillRect(0,0,1600,900);
+  try {
+    const resp = await fetch(url);
+    if(resp.ok){
+      const blob = await resp.blob();
+      const src = URL.createObjectURL(blob);
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => { ctx.drawImage(img,0,0,1600,900); URL.revokeObjectURL(src); resolve(); };
+        img.onerror = reject; img.src = src;
+      });
+    }
+  } catch(e){}
+  function xy(p){
+    return { x: ((p.lng-(lng-d))/(2*d))*1600, y: (((lat+d)-p.lat)/(2*d))*900 };
+  }
+  function stamp(p, label, color){
+    const t = String(label||'').slice(0,12);
+    ctx.font = 'bold 18px Inter,sans-serif';
+    const w = Math.max(50, ctx.measureText(t).width + 18);
+    ctx.fillStyle = color;
+    ctx.fillRect(p.x-w/2, p.y-14, w, 28);
+    ctx.fillStyle = '#0c0e0c';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(t, p.x, p.y);
+  }
+  (op.map_markers||[]).forEach(mk => { if(mk.lat!=null) stamp(xy(mk), mk.label||mk.type, colorFor(mk.type)); });
+  (op.map_stacks||[]).forEach(st => { if(st.lat!=null) stamp(xy(st), st.name||'Entry', '#e4c35a'); });
+  (currentOperatorsCache||[]).forEach(o => {
+    if(o.lat==null) return;
+    stamp(xy(o), operatorUnitLabel(memberById(o.member_id)), '#e4c35a');
+  });
+  return canvas.toDataURL('image/jpeg', 0.88);
+}
+
+function renderDashStacks(op){
+  const el = document.getElementById('dashStackEditor');
+  if(!el) return;
+  const stacks = op.map_stacks || [];
+  if(!stacks.length){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="page-title" style="font-size:16px; margin-bottom:8px;">Stacks</div>' + stacks.map(st => {
+    const members = st.members || [];
+    const opts = allPersonnel.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const rows = members.map((m,i) => {
+      const person = memberById(m.member_id);
+      return `<div style="display:flex; gap:8px; align-items:center; margin:4px 0;">
+        <span class="list-row-meta">${i+1}.</span>
+        <span>${person ? person.name : 'Unknown'}</span>
+        <button type="button" class="btn btn-ghost" data-stack="${st.id}" data-rm="${i}" style="font-size:11px;">Remove</button>
+      </div>`;
+    }).join('');
+    return `<div class="list-row" style="cursor:default;">
+      <div class="list-row-title">${st.name || 'Stack'}</div>
+      ${rows || '<div class="list-row-meta">No operators in this stack yet.</div>'}
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <select class="field-input" data-add-sel="${st.id}" style="max-width:240px;"><option value="">Add operator…</option>${opts}</select>
+        <button type="button" class="btn btn-outline" data-add="${st.id}">Add</button>
+      </div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = btn.dataset.add;
+    const sel = el.querySelector('[data-add-sel="'+id+'"]');
+    const memberId = sel && sel.value;
+    if(!memberId) return;
+    const next = (currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: [...(s.members||[]), { member_id: memberId }] } : s);
+    await saveDashStacks(next);
+    renderDashStacks(currentOpCache);
+  }));
+  el.querySelectorAll('[data-rm]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = btn.dataset.stack;
+    const idx = Number(btn.dataset.rm);
+    const next = (currentOpCache.map_stacks||[]).map(s => {
+      if(String(s.id)!==String(id)) return s;
+      const members = (s.members||[]).filter((_,i) => i!==idx);
+      return { ...s, members };
+    });
+    await saveDashStacks(next);
+    renderDashStacks(currentOpCache);
+  }));
+}
+
+function renderDashCheckins(op){
+  const el = document.getElementById('dashCheckins');
+  if(!el) return;
+  const list = op.checkins || [];
+  if(!list.length){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="page-title" style="font-size:16px; margin-bottom:8px;">Check-ins</div>' + list.map(c => {
+    const gps = (c.lat!=null) ? `${Number(c.lat).toFixed(5)}, ${Number(c.lng).toFixed(5)}` : 'no GPS';
+    const link = (c.lat!=null) ? mapsLinkHtml(`${c.lat},${c.lng}`, 'Map') : '';
+    return `<div class="list-row" style="cursor:default;"><div class="list-row-title">${c.name||'Operator'}</div><div class="list-row-meta">${gps}${link}</div></div>`;
+  }).join('');
 }
 
