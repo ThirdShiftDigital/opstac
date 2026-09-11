@@ -1102,6 +1102,7 @@ function renderOpDetail(op, operators){
       <div class="dash-map-tools">
         <input type="text" class="field-input" id="dashMapAddress" placeholder="Jump to address" style="flex:1; min-width:220px;" value="${(op.location||'').replace(/"/g,'&quot;')}">
         <button type="button" class="btn btn-outline" id="dashMapGo">Go</button>
+        <button type="button" class="btn btn-outline" id="dashMapLock">Lock map</button>
         <label class="list-row-meta" style="display:flex; align-items:center; gap:8px;">Rotate
           <input type="range" id="dashRotate" min="0" max="360" value="0" style="width:140px;">
           <span id="dashRotateDeg">0°</span>
@@ -2323,7 +2324,7 @@ function initDashLiveMap(op){
   const el = document.getElementById('dashLiveMap');
   if(!el || !window.L) return;
   if(dashLiveMap){ try { dashLiveMap.remove(); } catch(e){} dashLiveMap = null; }
-  dashLiveMap = L.map(el, { zoomControl:true, attributionControl:false });
+  dashLiveMap = L.map(el, { zoomControl:true, attributionControl:false, scrollWheelZoom:false });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(dashLiveMap);
   dashLiveLayer = L.layerGroup().addTo(dashLiveMap);
   dashLiveMap.setView([36.208,-86.291], 17);
@@ -2334,6 +2335,32 @@ function initDashLiveMap(op){
   const inp = document.getElementById('dashMapAddress');
   if(go) go.onclick = () => focusDashOp({ ...currentOpCache, location: inp && inp.value });
   if(inp) inp.addEventListener('keydown', (e) => { if(e.key==='Enter') focusDashOp({ ...currentOpCache, location: inp.value }); });
+  
+  const lockBtn = document.getElementById('dashMapLock');
+  if(lockBtn){
+    lockBtn.onclick = () => {
+      const locked = lockBtn.dataset.locked === '1';
+      if(locked){
+        dashLiveMap.dragging.enable();
+        dashLiveMap.doubleClickZoom.enable();
+        dashLiveMap.touchZoom.enable();
+        dashLiveMap.boxZoom.enable();
+        dashLiveMap.keyboard.enable();
+        lockBtn.dataset.locked = '0';
+        lockBtn.textContent = 'Lock map';
+      } else {
+        dashLiveMap.dragging.disable();
+        dashLiveMap.doubleClickZoom.disable();
+        dashLiveMap.touchZoom.disable();
+        dashLiveMap.boxZoom.disable();
+        dashLiveMap.keyboard.disable();
+        dashLiveMap.scrollWheelZoom.disable();
+        lockBtn.dataset.locked = '1';
+        lockBtn.textContent = 'Unlock map';
+      }
+    };
+  }
+
   setTimeout(() => dashLiveMap.invalidateSize(), 200);
   const rot = document.getElementById('dashRotate');
   const deg = document.getElementById('dashRotateDeg');
