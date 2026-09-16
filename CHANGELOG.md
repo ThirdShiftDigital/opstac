@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 — 2026-09-16
+
+### Command desk
+- Operations support planning → active → complete (Mark Active / Mark Complete).
+- Mark Complete preserves existing debrief data instead of wiping it to `{}`.
+- Ops list and overview show Active status correctly.
+
 ## 0.1.1 — 2026-09-16
 
 ### Command desk
