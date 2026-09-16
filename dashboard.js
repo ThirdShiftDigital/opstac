@@ -360,7 +360,7 @@ async function loadOverview(){
 function renderOverviewStats(personnel, certs, ops, callouts){
   const ready = personnel.filter(p => p.status === 'ready').length;
   const certsDue = certs.filter(c => { const d = daysUntil(c.expires); return d !== null && d <= 30; }).length;
-  const activeOps = ops.filter(o => o.status === 'planning').length;
+  const activeOps = ops.filter(o => o.status === 'planning' || o.status === 'active').length;
   const pendingCallouts = callouts.filter(c => c.active && (c.callout_recipients||[]).some(r => r.ack !== 'acknowledged')).length;
 
   $('#overviewStats').innerHTML = `
@@ -385,14 +385,17 @@ function renderOverviewStatusBoard(personnel, certs){
   }).join('')}</div>`;
 }
 function renderOverviewOps(ops){
-  const active = ops.filter(o => o.status === 'planning');
+  const active = ops.filter(o => o.status === 'planning' || o.status === 'active');
   if(active.length === 0){ $('#overviewOps').innerHTML = `<div class="panel-empty">No active operations.</div>`; return; }
-  $('#overviewOps').innerHTML = active.slice(0,6).map(o => `
+  $('#overviewOps').innerHTML = active.slice(0,6).map(o => {
+    const label = o.status === 'active' ? 'Active' : 'Planning';
+    return `
     <div class="list-row" data-op-id="${o.id}">
-      <span class="pill warn"><span class="pill-dot"></span>Planning</span>
+      <span class="pill warn"><span class="pill-dot"></span>${label}</span>
       <div class="list-row-title">${o.name}</div>
       <div class="list-row-meta">${o.type || ''} ${o.date ? '· ' + o.date : ''}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   $$('#overviewOps .list-row').forEach(row => row.addEventListener('click', () => {
     $$('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.section === 'operations'));
     $$('.section').forEach(s => s.classList.toggle('active', s.id === 'sec-operations'));
@@ -1063,8 +1066,8 @@ async function loadOperations(){
   const { data: ops } = await supabaseClient.from('operations').select('*').order('date', { ascending:false });
   if(!ops || ops.length === 0){ $('#opsListWrap').innerHTML = `<div class="panel-empty">No operations logged yet.</div>`; return; }
   $('#opsListWrap').innerHTML = ops.map(o => {
-    const statusCls = o.status === 'complete' ? 'good' : 'warn';
-    const statusLabel = o.status === 'complete' ? 'Complete' : 'Planning';
+    const statusCls = o.status === 'complete' ? 'good' : o.status === 'active' ? 'warn' : 'neutral';
+    const statusLabel = o.status === 'complete' ? 'Complete' : o.status === 'active' ? 'Active' : 'Planning';
     return `<div class="list-row" data-op-id="${o.id}">
       <span class="pill ${statusCls}"><span class="pill-dot"></span>${statusLabel}</span>
       <div class="list-row-title">${o.name}</div>
@@ -1415,7 +1418,13 @@ function renderPlan(op, editable){
       ${editable
         ? `<textarea class="field-textarea" data-plan-field="${f.key}" placeholder="Not yet filled in...">${plan[f.key]||''}</textarea>`
         : `<div class="field-textarea" style="color:var(--text-dim);">${plan[f.key] || 'Not yet filled in'}</div>`}
-    </div>`).join('') + (op.status==='planning' && editable ? `<button class="btn btn-primary" id="completeOpBtn">Mark Operation Complete</button>` : '');
+    </div>`).join('') + (editable
+      ? (op.status==='planning'
+          ? `<button class="btn btn-primary" id="activateOpBtn">Mark Operation Active</button>`
+          : op.status==='active'
+            ? `<button class="btn btn-primary" id="completeOpBtn">Mark Operation Complete</button>`
+            : '')
+      : '');
 
   loadTargetPhotos(op.id, editable);
   loadOpAssets(op.id, editable);
@@ -1447,10 +1456,23 @@ function renderPlan(op, editable){
       await supabaseClient.from('operations').update({ plan: newPlan }).eq('id', currentOpId);
       op.plan = newPlan;
     }));
+    const activateBtn = $('#activateOpBtn');
+    if(activateBtn) activateBtn.addEventListener('click', async () => {
+      const { error } = await supabaseClient.from('operations').update({ status:'active' }).eq('id', currentOpId);
+      if(error){ alert('Could not activate operation: ' + error.message); return; }
+      op.status = 'active';
+      if(currentOpCache) currentOpCache.status = 'active';
+      renderPlan(op, editable);
+    });
     const completeBtn = $('#completeOpBtn');
     if(completeBtn) completeBtn.addEventListener('click', async () => {
-      await supabaseClient.from('operations').update({ status:'complete', debrief:{} }).eq('id', currentOpId);
-      op.status = 'complete'; op.debrief = {};
+      const debrief = { ...(op.debrief || {}) };
+      const { error } = await supabaseClient.from('operations').update({ status:'complete', debrief }).eq('id', currentOpId);
+      if(error){ alert('Could not complete operation: ' + error.message); return; }
+      op.status = 'complete';
+      op.debrief = debrief;
+      if(currentOpCache){ currentOpCache.status = 'complete'; currentOpCache.debrief = debrief; }
+      renderPlan(op, editable);
       renderDebrief(op, editable);
       $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
       $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
@@ -1934,7 +1956,7 @@ async function openNewCalloutModal(lockedOp){
       <div class="field-static" style="color:var(--olive-bright);">${lockedOp.name}</div></div>`;
   } else {
     const { data: ops } = await supabaseClient.from('operations').select('id, name, status').order('date', { ascending:false });
-    const opOptions = (ops||[]).map(o => `<option value="${o.id}">${o.name} (${o.status==='complete'?'Complete':'Planning'})</option>`).join('');
+    const opOptions = (ops||[]).map(o => `<option value="${o.id}">${o.name} (${o.status==='complete'?'Complete':o.status==='active'?'Active':'Planning'})</option>`).join('');
     opLinkHtml = `<div class="field-group"><label class="field-label">Link to Operation (optional)</label>
       <select id="mCoOperation">
         <option value="">— None —</option>
