@@ -1224,164 +1224,6 @@ function renderOpDetail(op, operators){
 
 }
 
-async function renderExistingMapImage(op){
-  if(!op.map_image_url) return;
-  const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600);
-  if(error){
-    console.error('renderExistingMapImage: could not get signed URL', { path: op.map_image_url, error });
-    return;
-  }
-  $('#mapCanvas').classList.add('has-image');
-  if(op.map_image_ratio) $('#mapCanvas').style.aspectRatio = op.map_image_ratio;
-  $('#mapBgImage').src = data.signedUrl;
-  $('#mapBgImage').style.display = 'block';
-  $('#mapUploadPrompt').style.display = 'none';
-}
-
-async function renderOpCallouts(opId){
-  $('#opCalloutsContent').innerHTML = `<div class="loading-state">Loading...</div>`;
-  const { data: callouts } = await supabaseClient.from('callouts').select('*, callout_recipients(*)').eq('operation_id', opId).order('created_at', { ascending:false });
-  if(!callouts || callouts.length === 0){
-    $('#opCalloutsContent').innerHTML = `<div class="panel-empty">No callouts linked to this operation yet. Use "Callout Team" above to send one.</div>`;
-    return;
-  }
-  const methodLabel = { text:'Sent via Text', share:'Shared', logged:'Logged Verbally', 'signal-group':'Sent to Signal Group' };
-  $('#opCalloutsContent').innerHTML = callouts.map(co => {
-    const total = (co.callout_recipients||[]).length;
-    const acked = (co.callout_recipients||[]).filter(r => r.ack === 'acknowledged').length;
-    const modeCls = co.mode === 'deploy' ? 'bad' : 'warn';
-    const recipRows = (co.callout_recipients||[]).map(r => {
-      const m = memberById(r.member_id);
-      return `<div class="checklist-row" data-callout-id="${co.id}" data-member-id="${r.member_id}" style="cursor:${canManageCallouts()?'pointer':'default'};">
-        <span>${m ? m.name : '—'}</span>
-        <span class="pill ${r.ack==='acknowledged'?'good':'warn'}" style="margin-left:auto;"><span class="pill-dot"></span>${r.ack==='acknowledged'?'Acknowledged':'Pending'}</span>
-      </div>`;
-    }).join('');
-    return `<div class="list-row" style="cursor:default;">
-      <span class="pill ${modeCls}"><span class="pill-dot"></span>${co.mode==='deploy'?'Deploy':'Standby'}</span>
-      <div class="list-row-title">${co.type||'Callout'}</div>
-      <div class="list-row-meta">${co.date||''} ${co.location?'· '+co.location:''}${mapsLinkHtml(co.location)} · ${acked}/${total} acknowledged · ${methodLabel[co.method]||co.method}</div>
-      <div style="margin-top:10px;">${recipRows}</div>
-    </div>`;
-  }).join('');
-
-  if(canManageCallouts()){
-    $$('#opCalloutsContent .checklist-row[data-callout-id]').forEach(row => row.addEventListener('click', async () => {
-      const calloutId = row.dataset.calloutId, memberId = row.dataset.memberId;
-      const { data: current } = await supabaseClient.from('callout_recipients').select('ack').eq('callout_id', calloutId).eq('member_id', memberId).single();
-      const newAck = current && current.ack === 'acknowledged' ? 'pending' : 'acknowledged';
-      await supabaseClient.from('callout_recipients').update({ ack: newAck }).eq('callout_id', calloutId).eq('member_id', memberId);
-      renderOpCallouts(opId);
-    }));
-  }
-}
-
-const DASH_LOCS = [
-  { type:'command', label:'Command' },
-  { type:'ems', label:'EMS' },
-  { type:'lz', label:'LZ' },
-  { type:'vehicle', label:'Vehicle' },
-  { type:'rally', label:'Rally' },
-  { type:'staging', label:'Staging' },
-];
-function operatorUnitLabel(person){
-  if(!person) return '?';
-  const raw = String(person.callsign || person.unit_number || '').trim();
-  if(raw) return raw.slice(0,6);
-  return String(person.name||'?').split(' ').map(w=>w[0]).join('').slice(0,3).toUpperCase();
-}
-function renderMapPalette(op, operators, editable){
-  const loc = DASH_LOCS.map(l => `<button type="button" class="btn btn-outline dash-loc ${dashPlaceMode===l.type?'btn-primary':''}" data-loc="${l.type}" style="font-size:11px; padding:6px 8px;">${l.label}</button>`).join('');
-  const people = allPersonnel.map(p => {
-    const placed = (operators||[]).some(o => o.member_id === p.id);
-    const mark = operatorUnitLabel(p);
-    return `<button type="button" class="btn btn-outline ${armedOperatorId===p.id?'btn-primary':''}" data-member-id="${p.id}" style="font-size:11px; padding:6px 8px;${placed?'box-shadow:0 0 0 2px var(--olive) inset;':''}">${mark} · ${p.name}</button>`;
-  }).join('');
-  $('#opPalette').innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 8px;">${loc}</div>
-    <div style="display:flex; flex-wrap:wrap; gap:6px;">${people}</div>
-    <div class="list-row-meta" id="dashMapHint" style="margin-top:8px;">Select a type or person, click the map to place. Drag to move. Click a pin, then Remove selected.</div>`;
-  if(!editable) return;
-  $$('#opPalette [data-loc]').forEach(btn => btn.addEventListener('click', () => {
-    dashPlaceMode = dashPlaceMode === btn.dataset.loc ? null : btn.dataset.loc;
-    armedOperatorId = null;
-    renderMapPalette(op, operators, editable);
-  }));
-  $$('#opPalette [data-member-id]').forEach(btn => btn.addEventListener('click', () => {
-    armedOperatorId = armedOperatorId === btn.dataset.memberId ? null : btn.dataset.memberId;
-    dashPlaceMode = null;
-    renderMapPalette(op, operators, editable);
-  }));
-}
-
-function renderMapPins(operators){
-  const canvas = $('#mapCanvas');
-  if(!canvas) return;
-  $$('.map-pin').forEach(p => p.remove());
-  operators.forEach(o => {
-    const m = memberById(o.member_id);
-    if(!m) return;
-    const pin = document.createElement('div');
-    pin.className = 'map-pin';
-    pin.style.left = o.x + '%';
-    pin.style.top = o.y + '%';
-    pin.textContent = m.name.split(' ').map(w=>w[0]).slice(-2).join('');
-    pin.title = m.name;
-    pin.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if(!canEditOps()) return;
-      await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', o.member_id);
-      const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
-      renderMapPins(refreshed || []);
-      renderMapPalette({}, refreshed || [], canEditOps());
-    });
-    canvas.appendChild(pin);
-  });
-}
-
-document.addEventListener('click', async (e) => {
-  if(e.target.id === 'mapCanvas' && canEditOps() && armedOperatorId){
-    const rect = e.target.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-    await supabaseClient.from('operation_operators').upsert({
-      operation_id: currentOpId, member_id: armedOperatorId,
-      x: Math.max(3,Math.min(97,x)), y: Math.max(3,Math.min(97,y)),
-    }, { onConflict: 'operation_id,member_id' });
-    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
-    renderMapPins(refreshed || []);
-  }
-});
-
-function wireMapUpload(op, editable){
-  if(!editable) return;
-  $('#mapUploadPrompt').addEventListener('click', () => $('#mapImageInput').click());
-  $('#mapImageInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const path = `${currentProfile.agency_id}/${currentOpId}/${Date.now()}-${file.name}`;
-    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-    if(error){ alert('Upload failed: ' + error.message); return; }
-
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      img.onload = async () => {
-        await supabaseClient.from('operations').update({
-          map_image_url: path, map_image_ratio: `${img.naturalWidth} / ${img.naturalHeight}`,
-        }).eq('id', currentOpId);
-        const { data: signed } = await supabaseClient.storage.from('operation-maps').createSignedUrl(path, 3600);
-        $('#mapCanvas').classList.add('has-image');
-        $('#mapCanvas').style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-        $('#mapBgImage').src = signed ? signed.signedUrl : '';
-        $('#mapBgImage').style.display = 'block';
-        $('#mapUploadPrompt').style.display = 'none';
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 const PLAN_FIELDS = [
   { key:'objective', label:'Objective' }, { key:'approach', label:'Approach / Entry Plan' },
   { key:'rallyPoint', label:'Rally Point' }, { key:'comms', label:'Communications Plan' },
@@ -1826,14 +1668,6 @@ function openEditCalloutModal(callout){
     </div>
     <div class="field-group"><label class="field-label">Location</label><input type="text" id="eCoLocation" value="${callout.location||''}"></div>
     <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="eCoRally" value="${callout.rally_location||''}"></div>
-    <div class="field-group">
-      <label class="field-label">Rally Point Map (optional)</label>
-      <input type="file" accept="image/*" id="eCoRallyMapInput" style="display:none;">
-      <div class="map-canvas ${callout.rally_map_image_url?'has-image':''}" id="eCoRallyMapCanvas" style="${callout.rally_map_image_url && callout.rally_map_ratio ? `aspect-ratio:${callout.rally_map_ratio};`:''}">
-        <div class="map-upload-prompt" id="eCoRallyMapPrompt" style="${callout.rally_map_image_url?'display:none;':''}">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
-        <img id="eCoRallyMapImg" style="${callout.rally_map_image_url?'display:block;':'display:none;'}">
-      </div>
-    </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="eCoMessage">${callout.message||''}</textarea></div>
     <div class="settings-row" style="padding:10px 0;">
       <div><div class="settings-label">Active</div><div class="settings-sub">Turn off once this callout is resolved</div></div>
@@ -1848,61 +1682,11 @@ function openEditCalloutModal(callout){
   `);
   let eCoMode = callout.mode;
   let eCoActiveVal = !!callout.active;
+  // Live map preferred — preserve any existing rally map fields; no screenshot attach UI.
   let rallyMapPath = callout.rally_map_image_url || null;
   let rallyMapRatio = callout.rally_map_ratio || null;
   let rallyPinX = callout.rally_pin_x != null ? callout.rally_pin_x : null;
   let rallyPinY = callout.rally_pin_y != null ? callout.rally_pin_y : null;
-
-  if(rallyMapPath){
-    supabaseClient.storage.from('operation-maps').createSignedUrl(rallyMapPath, 3600).then(({data, error}) => {
-      if(error){ console.error('Edit callout rally map: could not get signed URL', { path: rallyMapPath, error }); return; }
-      $('#eCoRallyMapImg').src = data.signedUrl;
-    });
-    if(rallyPinX != null && rallyPinY != null){
-      const pin = document.createElement('div');
-      pin.className = 'map-pin rally-pin-marker';
-      pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
-      pin.textContent = 'R';
-      $('#eCoRallyMapCanvas').appendChild(pin);
-    }
-  }
-  $('#eCoRallyMapPrompt').addEventListener('click', () => $('#eCoRallyMapInput').click());
-  $('#eCoRallyMapInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const path = `${currentProfile.agency_id}/callouts/${callout.id}/${Date.now()}-${file.name}`;
-    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-    if(error){ alert('Upload failed: ' + error.message); return; }
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      img.onload = () => {
-        rallyMapPath = path;
-        rallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-        $('#eCoRallyMapCanvas').classList.add('has-image');
-        $('#eCoRallyMapCanvas').style.aspectRatio = rallyMapRatio;
-        $('#eCoRallyMapImg').src = ev.target.result;
-        $('#eCoRallyMapImg').style.display = 'block';
-        $('#eCoRallyMapPrompt').style.display = 'none';
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-  $('#eCoRallyMapCanvas').addEventListener('click', (e) => {
-    if(!rallyMapPath || e.target.closest('#eCoRallyMapPrompt')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-    rallyPinX = Math.max(3, Math.min(97, x));
-    rallyPinY = Math.max(3, Math.min(97, y));
-    $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
-    const pin = document.createElement('div');
-    pin.className = 'map-pin rally-pin-marker';
-    pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
-    pin.textContent = 'R';
-    $('#eCoRallyMapCanvas').appendChild(pin);
-  });
 
   $$('#eCoModeRow .choice-btn').forEach(btn => btn.addEventListener('click', () => {
     eCoMode = btn.dataset.mode;
@@ -1947,8 +1731,8 @@ async function openNewCalloutModal(lockedOp){
   let mode = null;
   let linkedOperationId = lockedOp ? lockedOp.id : '';
   const selected = new Set(allPersonnel.filter(p => p.on_call).map(p => p.id));
+  // Live map preferred — no rally screenshot attach on desk callouts.
   let rallyMapPath = null, rallyMapRatio = null, rallyPinX = null, rallyPinY = null;
-  const rallyMapId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
 
   let opLinkHtml;
   if(lockedOp){
@@ -1981,14 +1765,6 @@ async function openNewCalloutModal(lockedOp){
     </div>
     <div class="field-group"><label class="field-label">Location</label><input type="text" id="mCoLocation"></div>
     <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="mCoRally"></div>
-    <div class="field-group">
-      <label class="field-label">Rally Point Map (optional)</label>
-      <input type="file" accept="image/*" id="mCoRallyMapInput" style="display:none;">
-      <div class="map-canvas" id="mCoRallyMapCanvas">
-        <div class="map-upload-prompt" id="mCoRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
-        <img id="mCoRallyMapImg" style="display:none;">
-      </div>
-    </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="mCoMessage">SRT ACTIVATION. Report to staging ASAP. Await further instructions.</textarea></div>
     <div class="field-group"><label class="field-label">Select Team</label><div id="mCoRoster"></div></div>
     <div class="modal-actions" style="flex-wrap:wrap; gap:8px;">
@@ -2020,43 +1796,7 @@ async function openNewCalloutModal(lockedOp){
     $$('#mCoModeRow .choice-btn').forEach(b => b.classList.toggle('selected', b===btn));
   }));
 
-  $('#mCoRallyMapPrompt').addEventListener('click', () => $('#mCoRallyMapInput').click());
-  $('#mCoRallyMapInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const path = `${currentProfile.agency_id}/callouts/${rallyMapId}/${Date.now()}-${file.name}`;
-    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-    if(error){ alert('Upload failed: ' + error.message); return; }
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      img.onload = () => {
-        rallyMapPath = path;
-        rallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-        $('#mCoRallyMapCanvas').classList.add('has-image');
-        $('#mCoRallyMapCanvas').style.aspectRatio = rallyMapRatio;
-        $('#mCoRallyMapImg').src = ev.target.result;
-        $('#mCoRallyMapImg').style.display = 'block';
-        $('#mCoRallyMapPrompt').style.display = 'none';
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-  $('#mCoRallyMapCanvas').addEventListener('click', (e) => {
-    if(!rallyMapPath || e.target.closest('#mCoRallyMapPrompt')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-    rallyPinX = Math.max(3, Math.min(97, x));
-    rallyPinY = Math.max(3, Math.min(97, y));
-    $$('.rally-pin-marker').forEach(p => p.remove());
-    const pin = document.createElement('div');
-    pin.className = 'map-pin rally-pin-marker';
-    pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
-    pin.textContent = 'R';
-    $('#mCoRallyMapCanvas').appendChild(pin);
-  });
+  
   const hasSignalGroup = !!(currentSettings && currentSettings.signal_group_link);
   if($('#mSendSignal')) $('#mSendSignal').style.display = hasSignalGroup ? '' : 'none';
   if($('#mSignalHint')) $('#mSignalHint').style.display = hasSignalGroup ? 'none' : 'block';
