@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4  2026-09-16
+
+### Maps
+- Prefer live satellite map over screenshot / schematic attach for ops and callouts.
+- Field op map: hide upload / Change Image; live map is the pin surface.
+- Field + desk callouts: no rally-point screenshot attach (live map remains).
+- Desk: remove unused schematic map upload helpers.
+
 ## 0.1.3  2026-09-16
 
 ### Command desk

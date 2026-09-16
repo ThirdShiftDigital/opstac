@@ -2386,58 +2386,23 @@ function renderMapPalette(op, operators){
 }
 
 function renderMapImageState(op){
+  // Live satellite map is the primary surface — do not push screenshot/schematic attach.
   const canvas = $('#mapCanvas');
   const img = $('#mapBgImage');
   const prompt = $('#mapUploadPrompt');
   const changeBtn = $('#mapChangeBtn');
   const scaleLabel = $('#mapScaleLabel');
-  const editable = canEditOps();
-
-  if(op.map_image_url){
-    canvas.classList.add('has-image');
-    canvas.style.aspectRatio = op.map_image_ratio || '1 / 1';
-    prompt.style.display = 'none';
-    changeBtn.style.display = editable ? 'block' : 'none';
-    scaleLabel.style.display = 'none';
-    supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600).then(({data, error}) => {
-      if(error){ console.error('renderMapImageState: could not get signed URL', { path: op.map_image_url, error }); return; }
-      img.src = data ? data.signedUrl : '';
-      img.style.display = 'block';
-    });
-  } else {
-    canvas.classList.remove('has-image');
-    canvas.style.aspectRatio = '';
-    img.style.display = 'none'; img.src = '';
-    prompt.style.display = editable ? 'flex' : 'none';
-    changeBtn.style.display = 'none';
-    scaleLabel.style.display = 'block';
-  }
+  if(canvas) canvas.classList.add('has-image');
+  if(prompt) prompt.style.display = 'none';
+  if(changeBtn) changeBtn.style.display = 'none';
+  if(scaleLabel) scaleLabel.style.display = 'none';
+  if(img){ img.style.display = 'none'; img.src = ''; }
 }
 
 
-$('#mapUploadPrompt').addEventListener('click', () => { if(canEditOps()) $('#mapImageInput').click(); });
-$('#mapChangeBtn').addEventListener('click', () => { if(canEditOps()) $('#mapImageInput').click(); });
-$('#mapImageInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if(!file || !currentOpId) return;
-  const path = `${currentProfile.agency_id}/${currentOpId}/${Date.now()}-${file.name}`;
-  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-  if(error){ alert('Upload failed: ' + error.message); return; }
-
-  const img = new Image();
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    img.onload = async () => {
-      const ratio = `${img.naturalWidth} / ${img.naturalHeight}`;
-      await supabaseClient.from('operations').update({ map_image_url: path, map_image_ratio: ratio }).eq('id', currentOpId);
-      currentOpCache.map_image_url = path; currentOpCache.map_image_ratio = ratio;
-      renderMapImageState(currentOpCache);
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-  e.target.value = '';
-});
+// Screenshot/schematic attach retired — live map pull only.
+if($('#mapUploadPrompt')) $('#mapUploadPrompt').style.display = 'none';
+if($('#mapChangeBtn')) $('#mapChangeBtn').style.display = 'none';
 
 function renderMapPins(operators){
   $$('.map-pin').forEach(p => p.remove());
@@ -4051,43 +4016,7 @@ async function loadCalloutsIntoOpsList(){
 let calloutSelectedIds = new Set();
 let calloutRallyMapPath = null, calloutRallyMapRatio = null, calloutRallyPinX = null, calloutRallyPinY = null, calloutRallyMapId = null;
 
-$('#calloutRallyMapPrompt').addEventListener('click', () => { if(canManageCallouts()) $('#calloutRallyMapInput').click(); });
-$('#calloutRallyMapInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if(!file) return;
-  const path = `${currentProfile.agency_id}/callouts/${calloutRallyMapId}/${Date.now()}-${file.name}`;
-  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-  if(error){ alert('Upload failed: ' + error.message); return; }
-  const img = new Image();
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    img.onload = () => {
-      calloutRallyMapPath = path;
-      calloutRallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-      $('#calloutRallyMapCanvas').classList.add('has-image');
-      $('#calloutRallyMapCanvas').style.aspectRatio = calloutRallyMapRatio;
-      $('#calloutRallyMapImg').src = ev.target.result;
-      $('#calloutRallyMapImg').style.display = 'block';
-      $('#calloutRallyMapPrompt').style.display = 'none';
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-});
-$('#calloutRallyMapCanvas').addEventListener('click', (e) => {
-  if(!calloutRallyMapPath || e.target.closest('#calloutRallyMapPrompt')) return;
-  const rect = e.currentTarget.getBoundingClientRect();
-  const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-  const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-  calloutRallyPinX = Math.max(3, Math.min(97, x));
-  calloutRallyPinY = Math.max(3, Math.min(97, y));
-  $$('#calloutRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
-  const pin = document.createElement('div');
-  pin.className = 'map-pin rally-pin-marker';
-  pin.style.left = calloutRallyPinX + '%'; pin.style.top = calloutRallyPinY + '%';
-  pin.textContent = 'R';
-  $('#calloutRallyMapCanvas').appendChild(pin);
-});
+// Rally screenshot attach retired — live map on callout sheet only.
 
 let calloutAutoMessage = '';
 let calloutMode = null;
@@ -4148,12 +4077,14 @@ async function openCalloutSheet(lockedOp){
   renderCalloutRosterList();
 
   calloutRallyMapPath = null; calloutRallyMapRatio = null; calloutRallyPinX = null; calloutRallyPinY = null;
-  calloutRallyMapId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
-  $('#calloutRallyMapCanvas').classList.remove('has-image');
-  $('#calloutRallyMapCanvas').style.aspectRatio = '';
-  $('#calloutRallyMapImg').style.display = 'none';
-  $('#calloutRallyMapPrompt').style.display = 'flex';
-  $$('#calloutRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
+  calloutRallyMapId = null;
+  if($('#calloutRallyMapCanvas')){
+    $('#calloutRallyMapCanvas').classList.remove('has-image');
+    $('#calloutRallyMapCanvas').style.aspectRatio = '';
+    $('#calloutRallyMapCanvas').style.display = 'none';
+  }
+  if($('#calloutRallyMapImg')){ $('#calloutRallyMapImg').style.display = 'none'; $('#calloutRallyMapImg').src = ''; }
+  if($('#calloutRallyMapPrompt')) $('#calloutRallyMapPrompt').style.display = 'none';
 
   if(calloutLockedOp){
     $('#calloutOpLockedGroup').style.display = 'block';
@@ -4332,74 +4263,19 @@ function openEditCalloutSheet(callout){
   eCoActiveVal = !!callout.active;
   $('#eCoActive').classList.toggle('on', eCoActiveVal);
 
+  // Live map preferred — preserve existing rally map fields; no screenshot attach UI.
   eCoRallyMapPath = callout.rally_map_image_url || null;
   eCoRallyMapRatio = callout.rally_map_ratio || null;
   eCoRallyPinX = callout.rally_pin_x != null ? callout.rally_pin_x : null;
   eCoRallyPinY = callout.rally_pin_y != null ? callout.rally_pin_y : null;
-  $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
-  if(eCoRallyMapPath){
-    $('#eCoRallyMapCanvas').classList.add('has-image');
-    if(eCoRallyMapRatio) $('#eCoRallyMapCanvas').style.aspectRatio = eCoRallyMapRatio;
-    $('#eCoRallyMapPrompt').style.display = 'none';
-    $('#eCoRallyMapImg').style.display = 'block';
-    supabaseClient.storage.from('operation-maps').createSignedUrl(eCoRallyMapPath, 3600).then(({data, error}) => {
-      if(error){ console.error('Edit callout rally map: could not get signed URL', { path: eCoRallyMapPath, error }); return; }
-      $('#eCoRallyMapImg').src = data.signedUrl;
-    });
-    if(eCoRallyPinX != null && eCoRallyPinY != null){
-      const pin = document.createElement('div');
-      pin.className = 'map-pin rally-pin-marker';
-      pin.style.left = eCoRallyPinX + '%'; pin.style.top = eCoRallyPinY + '%';
-      pin.textContent = 'R';
-      $('#eCoRallyMapCanvas').appendChild(pin);
-    }
-  } else {
-    $('#eCoRallyMapCanvas').classList.remove('has-image');
-    $('#eCoRallyMapCanvas').style.aspectRatio = '';
-    $('#eCoRallyMapPrompt').style.display = 'flex';
-    $('#eCoRallyMapImg').style.display = 'none';
-  }
+  if($('#eCoRallyMapCanvas')) $('#eCoRallyMapCanvas').style.display = 'none';
+  if($('#eCoRallyMapPrompt')) $('#eCoRallyMapPrompt').style.display = 'none';
+  if($('#eCoRallyMapImg')){ $('#eCoRallyMapImg').style.display = 'none'; }
 
   $('#editCalloutSheet').classList.add('active');
   setTimeout(() => focusEditCalloutLiveMap(), 250);
 }
-$('#eCoRallyMapPrompt').addEventListener('click', () => $('#eCoRallyMapInput').click());
-$('#eCoRallyMapInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if(!file) return;
-  const path = `${currentProfile.agency_id}/callouts/${editingCalloutId}/${Date.now()}-${file.name}`;
-  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-  if(error){ alert('Upload failed: ' + error.message); return; }
-  const img = new Image();
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    img.onload = () => {
-      eCoRallyMapPath = path;
-      eCoRallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-      $('#eCoRallyMapCanvas').classList.add('has-image');
-      $('#eCoRallyMapCanvas').style.aspectRatio = eCoRallyMapRatio;
-      $('#eCoRallyMapImg').src = ev.target.result;
-      $('#eCoRallyMapImg').style.display = 'block';
-      $('#eCoRallyMapPrompt').style.display = 'none';
-    };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-});
-$('#eCoRallyMapCanvas').addEventListener('click', (e) => {
-  if(!eCoRallyMapPath || e.target.closest('#eCoRallyMapPrompt')) return;
-  const rect = e.currentTarget.getBoundingClientRect();
-  const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-  const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-  eCoRallyPinX = Math.max(3, Math.min(97, x));
-  eCoRallyPinY = Math.max(3, Math.min(97, y));
-  $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
-  const pin = document.createElement('div');
-  pin.className = 'map-pin rally-pin-marker';
-  pin.style.left = eCoRallyPinX + '%'; pin.style.top = eCoRallyPinY + '%';
-  pin.textContent = 'R';
-  $('#eCoRallyMapCanvas').appendChild(pin);
-});
+// eCo rally screenshot attach retired — live map only.
 $$('#eCoModeToggle .mode-btn').forEach(btn => btn.addEventListener('click', () => {
   eCoModeVal = btn.dataset.mode;
   $$('#eCoModeToggle .mode-btn').forEach(b => b.classList.toggle('selected', b===btn));
