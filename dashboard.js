@@ -2508,6 +2508,9 @@ function initDashLiveMap(op){
       await saveDashMarkers((currentOpCache.map_markers||[]).map(m => String(m.id)===String(dashSelected.id) ? { ...m, rot:val } : m));
     } else if(dashSelected.kind==='stack'){
       await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(dashSelected.id) ? { ...s, rot:val } : s));
+    } else if(dashSelected.kind==='pin'){
+      await supabaseClient.from('operation_operators').update({ rot: val }).eq('operation_id', currentOpId).eq('member_id', dashSelected.id);
+      currentOperatorsCache = (currentOperatorsCache||[]).map(o => String(o.member_id)===String(dashSelected.id) ? { ...o, rot:val } : o);
     }
     rebuildDashMarkers(currentOpCache);
   };
@@ -2578,7 +2581,7 @@ function rebuildDashMarkers(op){
   (op.map_markers||[]).forEach(mk => {
     if(mk.lat == null) return;
     const m = L.marker([mk.lat, mk.lng], { icon: liveIcon(mk.label||mk.type, colorFor(mk.type), mk.rot, mk.type==='medic'?'ems':mk.type), draggable: editable });
-    m.on('click', () => { dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
+    m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
     m.bindPopup(`${mk.label||mk.type}<br><button type="button" class="btn btn-danger-outline" data-rm-marker="${mk.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-marker="'+mk.id+'"]');
@@ -2596,6 +2599,12 @@ function rebuildDashMarkers(op){
   (op.map_stacks||[]).forEach(st => {
     if(st.lat == null) return;
     const m = L.marker([st.lat, st.lng], { icon: liveIcon(st.name||'Entry', '#e4c35a', st.rot, 'stack'), draggable: editable });
+    m.on('click', (ev) => {
+      L.DomEvent.stopPropagation(ev);
+      dashSelected = { kind:'stack', id: st.id };
+      const r=document.getElementById('dashRotate');
+      if(r){ r.value=String(st.rot||0); document.getElementById('dashRotateDeg').textContent=(st.rot||0)+'°'; }
+    });
     m.bindPopup(`${st.name||'Stack'}<br><button type="button" class="btn btn-danger-outline" data-rm-stack="${st.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-stack="'+st.id+'"]');
@@ -2615,6 +2624,12 @@ function rebuildDashMarkers(op){
     const person = memberById(o.member_id);
     const m = L.marker([o.lat, o.lng], { icon: liveIcon(operatorUnitLabel(person), '#e4c35a', o.rot, 'person'), draggable: editable });
     const name = person ? person.name : 'Operator';
+    m.on('click', (ev) => {
+      L.DomEvent.stopPropagation(ev);
+      dashSelected = { kind:'pin', id: o.member_id };
+      const r=document.getElementById('dashRotate');
+      if(r){ r.value=String(o.rot||0); document.getElementById('dashRotateDeg').textContent=(o.rot||0)+'°'; }
+    });
     m.bindPopup(`${name}<br><button type="button" class="btn btn-danger-outline" data-rm-pin="${o.member_id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-pin="'+o.member_id+'"]');

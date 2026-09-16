@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3  2026-09-16
+
+### Command desk
+- Live map: clicking a stack or person pin selects it for rotate / Remove selected (same as location markers).
+- Person pin rotation persists to `operation_operators.rot`.
+
 ## 0.1.2 — 2026-09-16
 
 ### Command desk
