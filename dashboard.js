@@ -68,6 +68,57 @@ function canManageRecords(){
 }
 
 function memberById(id){ return allPersonnel.find(p => p.id === id); }
+
+function toE164(phone){
+  const digits = (phone||'').replace(/\D/g,'');
+  return digits.length === 10 ? `+1${digits}` : `+${digits}`;
+}
+async function dispatchWebPush(title, body){
+  if(!currentProfile) return;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if(!session) return;
+  try {
+    await fetch('/.netlify/functions/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: session.access_token,
+        agencyId: currentProfile.agency_id,
+        title, body
+      })
+    });
+  } catch(e){ console.warn('send-push', e); }
+}
+function calloutAlertTitle(mode, type){
+  const base = mode === 'deploy' ? 'DEPLOY' : mode === 'standby' ? 'STANDBY' : mode === 'standdown' ? 'STAND DOWN' : 'CALLOUT';
+  return type ? base + ' — ' + type : base;
+}
+async function fireCalloutAlert({ title, body }){
+  const t = title || 'OpsTac Callout';
+  const b = body || 'New activation';
+  dispatchWebPush(t, b);
+  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const payload = {
+    title: t,
+    body: b,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    requireInteraction: true,
+    renotify: true,
+    silent: false,
+    tag: 'opstac-callout',
+    data: { url: '/dashboard.html' }
+  };
+  try {
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(payload.title, payload);
+      return;
+    }
+  } catch(e){ console.warn('sw notify', e); }
+  try { new Notification(payload.title, payload); } catch(e2){ console.warn('notify', e2); }
+}
+
 function mapsLink(address){ return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`; }
 function mapsLinkHtml(address, label){
   if(!address) return '';
@@ -1713,7 +1764,9 @@ async function loadCallouts(){
   $$('[data-standdown]').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     if(!confirm('Stand down this callout and notify the team?')) return;
-    await supabaseClient.from('callouts').update({ mode:'standdown', active:false, message:'SRT STAND DOWN. Return to normal status. Do not respond.' }).eq('id', btn.dataset.standdown);
+    const standMsg = 'SRT STAND DOWN. Return to normal status. Do not respond.';
+    await supabaseClient.from('callouts').update({ mode:'standdown', active:false, message:standMsg }).eq('id', btn.dataset.standdown);
+    fireCalloutAlert({ title: 'STAND DOWN', body: standMsg });
     loadCallouts();
   }));
   $$('[data-edit-callout]').forEach(btn => btn.addEventListener('click', (e) => {
@@ -1864,6 +1917,10 @@ $('#newCalloutBtn').addEventListener('click', () => openNewCalloutModal(null));
 
 async function openNewCalloutModal(lockedOp){
   await loadCorePersonnel();
+  if(!currentSettings){
+    const { data: settings } = await supabaseClient.from('agency_settings').select('*').eq('agency_id', currentProfile.agency_id).single();
+    currentSettings = settings;
+  }
   let mode = null;
   let linkedOperationId = lockedOp ? lockedOp.id : '';
   const selected = new Set(allPersonnel.filter(p => p.on_call).map(p => p.id));
@@ -1911,7 +1968,14 @@ async function openNewCalloutModal(lockedOp){
     </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="mCoMessage">SRT ACTIVATION. Report to staging ASAP. Await further instructions.</textarea></div>
     <div class="field-group"><label class="field-label">Select Team</label><div id="mCoRoster"></div></div>
-    <div class="modal-actions"><button class="btn btn-ghost" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Log Callout</button></div>
+    <div class="modal-actions" style="flex-wrap:wrap; gap:8px;">
+      <button class="btn btn-ghost" id="mCancel">Cancel</button>
+      <button class="btn btn-ghost" id="mLogOnly">Log only</button>
+      <button class="btn btn-ghost" id="mSendShare">Share</button>
+      <button class="btn btn-ghost" id="mSendSignal" style="display:none;">Signal group</button>
+      <button class="btn btn-primary" id="mSendText">Send via Text</button>
+    </div>
+    <div id="mSignalHint" style="display:none; font-size:11.5px; color:var(--text-dim); margin-top:8px; line-height:1.5;">Add a Signal group link in Settings to enable Signal group send.</div>
   `);
 
   if(!lockedOp){
@@ -1970,17 +2034,22 @@ async function openNewCalloutModal(lockedOp){
     pin.textContent = 'R';
     $('#mCoRallyMapCanvas').appendChild(pin);
   });
-  $('#mCancel').addEventListener('click', closeModal);
-  $('#mSave').addEventListener('click', async () => {
-    if(selected.size === 0){ alert('Select at least one team member.'); return; }
-    if(!mode){ alert('Select Standby Only or Deploy.'); return; }
+  const hasSignalGroup = !!(currentSettings && currentSettings.signal_group_link);
+  if($('#mSendSignal')) $('#mSendSignal').style.display = hasSignalGroup ? '' : 'none';
+  if($('#mSignalHint')) $('#mSignalHint').style.display = hasSignalGroup ? 'none' : 'block';
+
+  async function finalizeDeskCallout(method){
+    if(selected.size === 0){ alert('Select at least one team member.'); return null; }
+    if(!mode){ alert('Select Standby Only or Deploy.'); return null; }
+    const message = $('#mCoMessage').value.trim();
+    if(!message){ alert('Enter a message.'); return null; }
 
     let opId = linkedOperationId;
     if(!lockedOp){
       const picked = $('#mCoOperation').value;
       if(picked === '__new__'){
         const newName = $('#mCoNewOpName').value.trim();
-        if(!newName){ alert('Enter a name for the new operation.'); return; }
+        if(!newName){ alert('Enter a name for the new operation.'); return null; }
         const { data: newOp } = await supabaseClient.from('operations').insert({
           agency_id: currentProfile.agency_id, name: newName, status:'planning', plan:{},
           location: $('#mCoLocation').value.trim() || null,
@@ -1991,19 +2060,62 @@ async function openNewCalloutModal(lockedOp){
       }
     }
 
+    const now = new Date();
     const { data: callout } = await supabaseClient.from('callouts').insert({
       agency_id: currentProfile.agency_id,
       type: $('#mCoType').value.trim() || 'SRT Activation',
+      date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
       location: $('#mCoLocation').value.trim() || null,
       rally_location: $('#mCoRally').value.trim() || null,
-      mode, method: 'logged', message: $('#mCoMessage').value.trim(), active: true,
+      mode, method, message, active: true,
       operation_id: opId || null,
       rally_map_image_url: rallyMapPath, rally_map_ratio: rallyMapRatio,
       rally_pin_x: rallyPinX, rally_pin_y: rallyPinY,
     }).select().single();
     if(callout){
       await supabaseClient.from('callout_recipients').insert([...selected].map(memberId => ({ callout_id: callout.id, member_id: memberId, ack:'pending' })));
+      fireCalloutAlert({
+        title: calloutAlertTitle(callout.mode, callout.type),
+        body: callout.message || callout.location || 'New activation'
+      });
     }
+    return callout;
+  }
+
+  $('#mCancel').addEventListener('click', closeModal);
+  $('#mSendText').addEventListener('click', async () => {
+    const co = await finalizeDeskCallout('text');
+    if(!co) return;
+    const numbers = [...selected].map(id => toE164((memberById(id)||{}).phone)).filter(Boolean).join(',');
+    if(numbers) window.open(`sms:${numbers}?body=${encodeURIComponent(co.message)}`, '_self');
+    else alert('No phone numbers on the selected roster — callout was logged and push was sent.');
+    closeModal();
+    loadCallouts();
+  });
+  $('#mSendSignal') && $('#mSendSignal').addEventListener('click', async () => {
+    const signalWindow = window.open('', '_blank');
+    const co = await finalizeDeskCallout('signal-group');
+    if(!co){ if(signalWindow) signalWindow.close(); return; }
+    try { await navigator.clipboard.writeText(co.message); } catch(e){ /* optional */ }
+    const link = currentSettings && currentSettings.signal_group_link;
+    if(signalWindow && link) signalWindow.location.href = link;
+    else if(link) window.open(link, '_blank');
+    closeModal();
+    loadCallouts();
+  });
+  $('#mSendShare').addEventListener('click', async () => {
+    const co = await finalizeDeskCallout('share');
+    if(!co) return;
+    const recipientNames = [...selected].map(id => (memberById(id)||{}).name || 'Unknown').join(', ');
+    const shareText = `${co.message}\n\nTeam: ${recipientNames}`;
+    if(navigator.share) navigator.share({ title: co.type, text: shareText }).catch(()=>{});
+    else alert('Sharing isn\'t supported in this browser. The callout has been logged — use Send via Text, or copy this message:\n\n' + shareText);
+    closeModal();
+    loadCallouts();
+  });
+  $('#mLogOnly').addEventListener('click', async () => {
+    const co = await finalizeDeskCallout('logged');
+    if(!co) return;
     closeModal();
     loadCallouts();
   });
