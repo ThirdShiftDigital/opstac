@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 — 2026-09-16
+
+### Command desk
+- Live map shows placed operator pins when opening an operation (seeds operator cache on op open).
+
 ## 0.1.0 — 2026-09-16
 
 ### Command desk
