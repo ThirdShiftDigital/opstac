@@ -1121,6 +1121,7 @@ async function openOpDetail(opId){
   await loadCorePersonnel();
   const { data: op } = await supabaseClient.from('operations').select('*').eq('id', opId).single();
   const { data: operators } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', opId);
+  currentOperatorsCache = operators || [];
 
   renderOpDetail(op, operators || []);
 }
