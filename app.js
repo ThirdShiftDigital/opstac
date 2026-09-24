@@ -607,7 +607,9 @@ async function renderCommanderOverview(){
     </div>`;
   }).join('');
 
+  const scene = fieldSceneHome({ callouts, ops });
   $('#overviewContent').innerHTML = `
+    ${scene.html}
     <div class="hero-callout-btn" id="heroCalloutBtn">
       <div class="hero-callout-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13.73 4a2 2 0 0 0-3.46 0L2.34 18a2 2 0 0 0 1.73 3h15.86a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
       <div><div class="hero-callout-title">Callout Team</div><div class="hero-callout-sub">Activate & notify — text, Signal, or share</div></div>
@@ -619,6 +621,7 @@ async function renderCommanderOverview(){
     </div>
     <div class="status-board">${boardHtml}</div>
   `;
+  wireFieldSceneHome(scene);
   $('#heroCalloutBtn').addEventListener('click', () => { goToSection('operations'); openCalloutSheet(); });
 }
 
@@ -631,12 +634,14 @@ async function renderTeamLeaderOverview(){
   $('#overviewTitle').textContent = `${teamLabel} Dashboard`;
   $('#overviewSub').textContent = me ? `Welcome back, ${me.name}` : 'Welcome back';
 
-  const [certsRes, opsRes] = await Promise.all([
+  const [certsRes, opsRes, calloutsRes] = await Promise.all([
     supabaseClient.from('certifications').select('member_id, expires'),
     supabaseClient.from('operations').select('*'),
+    supabaseClient.from('callouts').select('*').order('created_at',{ascending:false}).limit(8),
   ]);
   const certs = certsRes.data || [];
   const ops = opsRes.data || [];
+  const callouts = calloutsRes.data || [];
 
   const teamReady = teamMembers.filter(p=>p.status==='ready').length;
   const teamCertsDue = certs.filter(c => teamMembers.some(p=>p.id===c.member_id) && daysUntil(c.expires)<=30).length;
@@ -666,17 +671,20 @@ async function renderTeamLeaderOverview(){
     </div>`;
   }).join('');
 
+  const scene = fieldSceneHome({ callouts, ops });
   $('#overviewContent').innerHTML = `
+    ${myStatusHtml}
+    ${scene.html}
     <div class="hero-callout-btn" id="heroCalloutBtn">
       <div class="hero-callout-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13.73 4a2 2 0 0 0-3.46 0L2.34 18a2 2 0 0 0 1.73 3h15.86a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
       <div><div class="hero-callout-title">Callout ${teamLabel}</div><div class="hero-callout-sub">Activate & notify — text, Signal, or share</div></div>
     </div>
-    ${myStatusHtml}
     ${statRowHtml}
     <div class="section-label-row"><div class="section-label">${teamLabel} Status <span class="n">(${teamMembers.length})</span></div></div>
     <div class="status-board">${boardHtml}</div>
   `;
   wireMyStatusCard();
+  wireFieldSceneHome(scene);
   $('#heroCalloutBtn').addEventListener('click', () => { goToSection('operations'); openCalloutSheet(); });
 }
 
@@ -685,14 +693,16 @@ async function renderMemberOverview(){
   $('#overviewTitle').textContent = 'My Dashboard';
   $('#overviewSub').textContent = me ? `Welcome back, ${me.name}` : 'Welcome back';
 
-  const [certsRes, equipRes, opsRes] = await Promise.all([
+  const [certsRes, equipRes, opsRes, calloutsRes] = await Promise.all([
     supabaseClient.from('certifications').select('*'),
     supabaseClient.from('equipment').select('*'),
     supabaseClient.from('operations').select('*, operation_operators(*)'),
+    supabaseClient.from('callouts').select('*').order('created_at',{ascending:false}).limit(8),
   ]);
   const allCerts = certsRes.data || [];
   const allEquip = equipRes.data || [];
   const allOps = opsRes.data || [];
+  const callouts = calloutsRes.data || [];
 
   const myCerts = me ? allCerts.filter(c=>c.member_id===me.id).sort((a,b)=>daysUntil(a.expires)-daysUntil(b.expires)) : [];
   const myCertsDue = myCerts.filter(c=>daysUntil(c.expires)<=30).length;
@@ -727,8 +737,10 @@ async function renderMemberOverview(){
     <span class="pill ${op.status==='complete'?'good':'warn'}"><span class="pill-dot"></span>${op.status==='complete'?'Complete':'Planning'}</span></div></div>
   `).join('') : `<div class="preview-empty">No operations assigned right now.</div>`;
 
+  const scene = fieldSceneHome({ callouts, ops: allOps });
   $('#overviewContent').innerHTML = `
     ${myStatusHtml}
+    ${scene.html}
     ${statRowHtml}
     <div class="section-label-row"><div class="section-label">My Certifications</div><div class="section-view-all" data-jump="certs">View All</div></div>
     <div class="card-list">${certsPreview}</div>
@@ -738,8 +750,43 @@ async function renderMemberOverview(){
     <div class="card-list">${opsPreview}</div>
   `;
   wireMyStatusCard();
+  wireFieldSceneHome(scene);
   $$('.section-view-all').forEach(el => el.addEventListener('click', () => goToSection(el.dataset.jump)));
   $$('[data-jump-op]').forEach(card => card.addEventListener('click', () => { goToSection('operations'); openOpDetail(card.dataset.jumpOp); }));
+}
+
+
+function fieldSceneHome({ callouts = [], ops = [] } = {}){
+  const active = (callouts||[]).find(c => c.active && c.mode !== 'standdown');
+  const openOp = (ops||[]).find(o => o.status === 'planning') || (ops||[]).find(o => o.status !== 'complete');
+  let html = '';
+  if(active){
+    const mode = active.mode === 'deploy' ? 'DEPLOY' : active.mode === 'standby' ? 'STANDBY' : 'CALLOUT';
+    html += `<div class="hero-callout-btn" id="homeActiveCallout">
+      <div class="hero-callout-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13.73 4a2 2 0 0 0-3.46 0L2.34 18a2 2 0 0 0 1.73 3h15.86a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+      <div><div class="hero-callout-title">${mode}</div><div class="hero-callout-sub">${active.type||'Callout'}${active.location?' — '+active.location:''}</div></div>
+    </div>`;
+  }
+  if(openOp){
+    html += `<div class="row-card" id="homeOpenOp" style="margin:10px 18px;">
+      <div class="row-top"><div><div class="row-title">${openOp.name}</div><div class="row-subtitle">${openOp.location||openOp.date||'Open operation'}</div></div>
+      <span class="pill warn"><span class="pill-dot"></span>Open</span></div>
+    </div>
+    <div class="px" style="margin-bottom:12px;"><button type="button" class="btn btn-primary btn-block" id="homeCheckIn">Check in to this op</button></div>`;
+  }
+  return { html, active, openOp };
+}
+function wireFieldSceneHome(pack){
+  const co = document.getElementById('homeActiveCallout');
+  if(co) co.addEventListener('click', () => goToSection('operations'));
+  const opEl = document.getElementById('homeOpenOp');
+  if(opEl && pack.openOp) opEl.addEventListener('click', () => { goToSection('operations'); setTimeout(() => openOpDetail(pack.openOp.id), 40); });
+  const ci = document.getElementById('homeCheckIn');
+  if(ci && pack.openOp) ci.addEventListener('click', async () => {
+    goToSection('operations');
+    await openOpDetail(pack.openOp.id);
+    if(typeof checkIntoCurrentOp === 'function') checkIntoCurrentOp();
+  });
 }
 
 function renderMyStatusCard(me, roleLine){
@@ -2386,23 +2433,58 @@ function renderMapPalette(op, operators){
 }
 
 function renderMapImageState(op){
-  // Live satellite map is the primary surface — do not push screenshot/schematic attach.
   const canvas = $('#mapCanvas');
   const img = $('#mapBgImage');
   const prompt = $('#mapUploadPrompt');
   const changeBtn = $('#mapChangeBtn');
   const scaleLabel = $('#mapScaleLabel');
-  if(canvas) canvas.classList.add('has-image');
-  if(prompt) prompt.style.display = 'none';
-  if(changeBtn) changeBtn.style.display = 'none';
-  if(scaleLabel) scaleLabel.style.display = 'none';
-  if(img){ img.style.display = 'none'; img.src = ''; }
+  const editable = canEditOps();
+
+  if(op.map_image_url){
+    canvas.classList.add('has-image');
+    canvas.style.aspectRatio = op.map_image_ratio || '1 / 1';
+    prompt.style.display = 'none';
+    changeBtn.style.display = editable ? 'block' : 'none';
+    scaleLabel.style.display = 'none';
+    supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600).then(({data, error}) => {
+      if(error){ console.error('renderMapImageState: could not get signed URL', { path: op.map_image_url, error }); return; }
+      img.src = data ? data.signedUrl : '';
+      img.style.display = 'block';
+    });
+  } else {
+    canvas.classList.remove('has-image');
+    canvas.style.aspectRatio = '';
+    img.style.display = 'none'; img.src = '';
+    prompt.style.display = editable ? 'flex' : 'none';
+    changeBtn.style.display = 'none';
+    scaleLabel.style.display = 'block';
+  }
 }
 
 
-// Screenshot/schematic attach retired — live map pull only.
-if($('#mapUploadPrompt')) $('#mapUploadPrompt').style.display = 'none';
-if($('#mapChangeBtn')) $('#mapChangeBtn').style.display = 'none';
+$('#mapUploadPrompt').addEventListener('click', () => { if(canEditOps()) $('#mapImageInput').click(); });
+$('#mapChangeBtn').addEventListener('click', () => { if(canEditOps()) $('#mapImageInput').click(); });
+$('#mapImageInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file || !currentOpId) return;
+  const path = `${currentProfile.agency_id}/${currentOpId}/${Date.now()}-${file.name}`;
+  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
+  if(error){ alert('Upload failed: ' + error.message); return; }
+
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    img.onload = async () => {
+      const ratio = `${img.naturalWidth} / ${img.naturalHeight}`;
+      await supabaseClient.from('operations').update({ map_image_url: path, map_image_ratio: ratio }).eq('id', currentOpId);
+      currentOpCache.map_image_url = path; currentOpCache.map_image_ratio = ratio;
+      renderMapImageState(currentOpCache);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
 
 function renderMapPins(operators){
   $$('.map-pin').forEach(p => p.remove());
@@ -4016,7 +4098,43 @@ async function loadCalloutsIntoOpsList(){
 let calloutSelectedIds = new Set();
 let calloutRallyMapPath = null, calloutRallyMapRatio = null, calloutRallyPinX = null, calloutRallyPinY = null, calloutRallyMapId = null;
 
-// Rally screenshot attach retired — live map on callout sheet only.
+$('#calloutRallyMapPrompt').addEventListener('click', () => { if(canManageCallouts()) $('#calloutRallyMapInput').click(); });
+$('#calloutRallyMapInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const path = `${currentProfile.agency_id}/callouts/${calloutRallyMapId}/${Date.now()}-${file.name}`;
+  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
+  if(error){ alert('Upload failed: ' + error.message); return; }
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    img.onload = () => {
+      calloutRallyMapPath = path;
+      calloutRallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+      $('#calloutRallyMapCanvas').classList.add('has-image');
+      $('#calloutRallyMapCanvas').style.aspectRatio = calloutRallyMapRatio;
+      $('#calloutRallyMapImg').src = ev.target.result;
+      $('#calloutRallyMapImg').style.display = 'block';
+      $('#calloutRallyMapPrompt').style.display = 'none';
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+$('#calloutRallyMapCanvas').addEventListener('click', (e) => {
+  if(!calloutRallyMapPath || e.target.closest('#calloutRallyMapPrompt')) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+  const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+  calloutRallyPinX = Math.max(3, Math.min(97, x));
+  calloutRallyPinY = Math.max(3, Math.min(97, y));
+  $$('#calloutRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
+  const pin = document.createElement('div');
+  pin.className = 'map-pin rally-pin-marker';
+  pin.style.left = calloutRallyPinX + '%'; pin.style.top = calloutRallyPinY + '%';
+  pin.textContent = 'R';
+  $('#calloutRallyMapCanvas').appendChild(pin);
+});
 
 let calloutAutoMessage = '';
 let calloutMode = null;
@@ -4077,14 +4195,12 @@ async function openCalloutSheet(lockedOp){
   renderCalloutRosterList();
 
   calloutRallyMapPath = null; calloutRallyMapRatio = null; calloutRallyPinX = null; calloutRallyPinY = null;
-  calloutRallyMapId = null;
-  if($('#calloutRallyMapCanvas')){
-    $('#calloutRallyMapCanvas').classList.remove('has-image');
-    $('#calloutRallyMapCanvas').style.aspectRatio = '';
-    $('#calloutRallyMapCanvas').style.display = 'none';
-  }
-  if($('#calloutRallyMapImg')){ $('#calloutRallyMapImg').style.display = 'none'; $('#calloutRallyMapImg').src = ''; }
-  if($('#calloutRallyMapPrompt')) $('#calloutRallyMapPrompt').style.display = 'none';
+  calloutRallyMapId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
+  $('#calloutRallyMapCanvas').classList.remove('has-image');
+  $('#calloutRallyMapCanvas').style.aspectRatio = '';
+  $('#calloutRallyMapImg').style.display = 'none';
+  $('#calloutRallyMapPrompt').style.display = 'flex';
+  $$('#calloutRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
 
   if(calloutLockedOp){
     $('#calloutOpLockedGroup').style.display = 'block';
@@ -4263,19 +4379,74 @@ function openEditCalloutSheet(callout){
   eCoActiveVal = !!callout.active;
   $('#eCoActive').classList.toggle('on', eCoActiveVal);
 
-  // Live map preferred — preserve existing rally map fields; no screenshot attach UI.
   eCoRallyMapPath = callout.rally_map_image_url || null;
   eCoRallyMapRatio = callout.rally_map_ratio || null;
   eCoRallyPinX = callout.rally_pin_x != null ? callout.rally_pin_x : null;
   eCoRallyPinY = callout.rally_pin_y != null ? callout.rally_pin_y : null;
-  if($('#eCoRallyMapCanvas')) $('#eCoRallyMapCanvas').style.display = 'none';
-  if($('#eCoRallyMapPrompt')) $('#eCoRallyMapPrompt').style.display = 'none';
-  if($('#eCoRallyMapImg')){ $('#eCoRallyMapImg').style.display = 'none'; }
+  $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
+  if(eCoRallyMapPath){
+    $('#eCoRallyMapCanvas').classList.add('has-image');
+    if(eCoRallyMapRatio) $('#eCoRallyMapCanvas').style.aspectRatio = eCoRallyMapRatio;
+    $('#eCoRallyMapPrompt').style.display = 'none';
+    $('#eCoRallyMapImg').style.display = 'block';
+    supabaseClient.storage.from('operation-maps').createSignedUrl(eCoRallyMapPath, 3600).then(({data, error}) => {
+      if(error){ console.error('Edit callout rally map: could not get signed URL', { path: eCoRallyMapPath, error }); return; }
+      $('#eCoRallyMapImg').src = data.signedUrl;
+    });
+    if(eCoRallyPinX != null && eCoRallyPinY != null){
+      const pin = document.createElement('div');
+      pin.className = 'map-pin rally-pin-marker';
+      pin.style.left = eCoRallyPinX + '%'; pin.style.top = eCoRallyPinY + '%';
+      pin.textContent = 'R';
+      $('#eCoRallyMapCanvas').appendChild(pin);
+    }
+  } else {
+    $('#eCoRallyMapCanvas').classList.remove('has-image');
+    $('#eCoRallyMapCanvas').style.aspectRatio = '';
+    $('#eCoRallyMapPrompt').style.display = 'flex';
+    $('#eCoRallyMapImg').style.display = 'none';
+  }
 
   $('#editCalloutSheet').classList.add('active');
   setTimeout(() => focusEditCalloutLiveMap(), 250);
 }
-// eCo rally screenshot attach retired — live map only.
+$('#eCoRallyMapPrompt').addEventListener('click', () => $('#eCoRallyMapInput').click());
+$('#eCoRallyMapInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const path = `${currentProfile.agency_id}/callouts/${editingCalloutId}/${Date.now()}-${file.name}`;
+  const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
+  if(error){ alert('Upload failed: ' + error.message); return; }
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    img.onload = () => {
+      eCoRallyMapPath = path;
+      eCoRallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+      $('#eCoRallyMapCanvas').classList.add('has-image');
+      $('#eCoRallyMapCanvas').style.aspectRatio = eCoRallyMapRatio;
+      $('#eCoRallyMapImg').src = ev.target.result;
+      $('#eCoRallyMapImg').style.display = 'block';
+      $('#eCoRallyMapPrompt').style.display = 'none';
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+$('#eCoRallyMapCanvas').addEventListener('click', (e) => {
+  if(!eCoRallyMapPath || e.target.closest('#eCoRallyMapPrompt')) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+  const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+  eCoRallyPinX = Math.max(3, Math.min(97, x));
+  eCoRallyPinY = Math.max(3, Math.min(97, y));
+  $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
+  const pin = document.createElement('div');
+  pin.className = 'map-pin rally-pin-marker';
+  pin.style.left = eCoRallyPinX + '%'; pin.style.top = eCoRallyPinY + '%';
+  pin.textContent = 'R';
+  $('#eCoRallyMapCanvas').appendChild(pin);
+});
 $$('#eCoModeToggle .mode-btn').forEach(btn => btn.addEventListener('click', () => {
   eCoModeVal = btn.dataset.mode;
   $$('#eCoModeToggle .mode-btn').forEach(b => b.classList.toggle('selected', b===btn));
