@@ -1847,6 +1847,8 @@ async function checkIntoCurrentOp(){
 }
 
 const MAP_LOCATION_TYPES = [
+  { type: 'target', label: 'Target' },
+  { type: 'breach', label: 'Breach' },
   { type: 'entry', label: 'Entry' },
   { type: 'command', label: 'Command' },
   { type: 'ems', label: 'EMS' },
@@ -1855,6 +1857,26 @@ const MAP_LOCATION_TYPES = [
   { type: 'staging', label: 'Staging' },
   { type: 'vehicle', label: 'Vehicle' },
 ];
+const VEHICLE_COLORS = {
+  black:'#3a3a3a', white:'#e8e6df', silver:'#9aa3a8',
+  red:'#c45c5c', blue:'#4a7ab5', gold:'#b59a4d', marked:'#4d7a45'
+};
+function askMarkerMeta(type, defaultLabel){
+  if(type === 'vehicle'){
+    const label = prompt('Vehicle label (Bearcat, Black F150, Marked unit)', defaultLabel || 'Vehicle');
+    if(label === null) return null;
+    const colorName = prompt('Color: black, white, silver, red, blue, gold, marked', 'black');
+    if(colorName === null) return null;
+    const key = String(colorName||'black').toLowerCase().trim();
+    return { label: (label||'Vehicle').slice(0,18), color: VEHICLE_COLORS[key] || key || VEHICLE_COLORS.black };
+  }
+  if(type === 'target' || type === 'breach' || type === 'entry'){
+    const label = prompt('Label (optional)', defaultLabel || type);
+    if(label === null) return null;
+    return { label: (label || defaultLabel || type).slice(0,16) };
+  }
+  return { label: defaultLabel || type };
+}
 let liveMap = null;
 let liveLayer = null;
 let liveGeoLayer = null;
@@ -2002,19 +2024,24 @@ function operatorUnitLabel(person){
   return String(person.name||'?').split(' ').map(w => w[0]).join('').slice(0,3).toUpperCase();
 }
 
-function liveGlyph(shape, label){
-  const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a';
+function liveGlyph(shape, label, accent){
+  const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a', o = '#d18a3a';
   if(shape === 'ems' || shape === 'medic'){
     return `<svg viewBox="0 0 32 32" width="28" height="28">
       <rect x="2" y="2" width="28" height="28" rx="3" fill="#1a1212" stroke="${r}" stroke-width="2"/>
       <rect x="14" y="8" width="4" height="16" fill="${r}"/>
       <rect x="8" y="14" width="16" height="4" fill="${r}"/></svg>`;
   }
+  if(shape === 'target'){
+    return `<svg viewBox="0 0 32 32" width="30" height="30"><circle cx="16" cy="16" r="13" fill="#1a1010" stroke="${r}" stroke-width="2"/><circle cx="16" cy="16" r="7" fill="none" stroke="${r}" stroke-width="1.6"/><circle cx="16" cy="16" r="2.2" fill="${r}"/><path d="M16 3 v5 M16 24 v5 M3 16 h5 M24 16 h5" stroke="${r}" stroke-width="1.6"/></svg>`;
+  }
+  if(shape === 'breach'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#1a140e" stroke="${o}" stroke-width="2"/><path d="M10 24 V8 h9 a4 4 0 0 1 0 16 H10z" fill="none" stroke="${o}" stroke-width="2"/><circle cx="21" cy="16" r="1.4" fill="${o}"/></svg>`;
+  }
   if(shape === 'vehicle'){
-    return `<svg viewBox="0 0 32 32" width="28" height="28">
-      <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/>
-      <path d="M8 20 h16 l-3-8 h-10 z" fill="none" stroke="${a}" stroke-width="2" stroke-linejoin="round"/>
-      <circle cx="12" cy="21" r="1.6" fill="${a}"/><circle cx="20" cy="21" r="1.6" fill="${a}"/></svg>`;
+    const c = accent || a;
+    const t = String(label||'').slice(0,8);
+    return `<svg viewBox="0 0 40 36" width="36" height="32"><rect x="1" y="1" width="38" height="24" rx="3" fill="#141814" stroke="${c}" stroke-width="2"/><path d="M8 18 h24 l-3-8 h-18 z" fill="${c}" fill-opacity=".35" stroke="${c}" stroke-width="1.6"/><circle cx="13" cy="19" r="1.7" fill="${c}"/><circle cx="27" cy="19" r="1.7" fill="${c}"/><text x="20" y="33" text-anchor="middle" font-size="7" font-weight="700" fill="${c}" font-family="Inter,sans-serif">${t}</text></svg>`;
   }
   if(shape === 'lz'){
     return `<svg viewBox="0 0 32 32" width="28" height="28">
@@ -2037,12 +2064,15 @@ function liveGlyph(shape, label){
       <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/>
       <rect x="8" y="8" width="16" height="16" fill="none" stroke="${a}" stroke-width="2" stroke-dasharray="3 2"/></svg>`;
   }
-  if(shape === 'stack' || shape === 'entry'){
+  if(shape === 'stack'){
     return `<svg viewBox="0 0 32 32" width="28" height="28">
       <rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${y}" stroke-width="2"/>
       <circle cx="16" cy="9" r="2.4" fill="${y}"/>
       <circle cx="16" cy="16" r="2.4" fill="${y}"/>
       <circle cx="16" cy="23" r="2.4" fill="${y}"/></svg>`;
+  }
+  if(shape === 'entry'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${y}" stroke-width="2"/><path d="M8 16 h10 M14 11 l6 5 -6 5" fill="none" stroke="${y}" stroke-width="2.2" stroke-linejoin="round"/><path d="M22 8 v16" stroke="${y}" stroke-width="2"/></svg>`;
   }
   if(shape === 'checkin'){
     return `<svg viewBox="0 0 32 32" width="22" height="22">
@@ -2061,7 +2091,7 @@ function liveIcon(label, color, rot, shape){
   const deg = Number(rot||0);
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape, label)}</div>`,
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape, label, color)}</div>`,
     iconSize: [0,0],
     iconAnchor: [0,0]
   });
@@ -2093,7 +2123,7 @@ function rebuildLiveMarkers(op){
   (op.map_markers || []).forEach(mk => {
     if(mk.lat == null || mk.lng == null) return;
     const m = L.marker([mk.lat, mk.lng], {
-      icon: liveIcon(mk.label || mk.type || 'Mark', mk.type==='vehicle' ? '#8fbf88' : (mk.type==='medic'||mk.type==='ems') ? '#e8a0a0' : mk.type==='lz' ? '#7ec8e3' : mk.type==='checkin' ? '#6b9a5f' : '#d4b86a', mk.rot, mk.type==='medic' ? 'ems' : mk.type),
+      icon: liveIcon(mk.label || mk.type || 'Mark', mk.color || (mk.type==='vehicle' ? '#8fbf88' : mk.type==='target' ? '#c45c5c' : mk.type==='breach' ? '#d18a3a' : (mk.type==='medic'||mk.type==='ems') ? '#e8a0a0' : mk.type==='lz' ? '#7ec8e3' : mk.type==='checkin' ? '#6b9a5f' : '#d4b86a'), mk.rot, mk.type==='medic' ? 'ems' : mk.type),
       draggable: editable,
       rotationAngle: Number(mk.rot||0)
     });
@@ -2195,7 +2225,9 @@ async function onLiveMapClick(e){
   if(placingMarkerType){
     const meta = MAP_LOCATION_TYPES.find(t => t.type === placingMarkerType) || { type: placingMarkerType, label: placingMarkerType };
     const markers = Array.isArray(currentOpCache.map_markers) ? currentOpCache.map_markers : [];
-    await saveMapMarkers([...markers, { id: sid((crypto.randomUUID && crypto.randomUUID()) || ('mk-'+Date.now())), type: meta.type, label: meta.label, lat, lng, x:50, y:50 }]);
+    const extra = askMarkerMeta(meta.type, meta.label);
+    if(!extra){ placingMarkerType = null; renderMapPalette(currentOpCache, currentOperatorsCache); return; }
+    await saveMapMarkers([...markers, { id: sid((crypto.randomUUID && crypto.randomUUID()) || ('mk-'+Date.now())), type: meta.type, label: extra.label || meta.label, color: extra.color || null, lat, lng, x:50, y:50 }]);
     placingMarkerType = null;
     rebuildLiveMarkers(currentOpCache);
     renderMapPalette(currentOpCache, currentOperatorsCache);
@@ -2682,10 +2714,13 @@ if(!window._mapClickBound){
     if(placingMarkerType){
       const meta = MAP_LOCATION_TYPES.find(t => t.type === placingMarkerType) || { type: placingMarkerType, label: placingMarkerType };
       const markers = Array.isArray(currentOpCache.map_markers) ? currentOpCache.map_markers : [];
+      const extra = askMarkerMeta(meta.type, meta.label);
+      if(!extra){ placingMarkerType = null; renderMapPalette(currentOpCache, currentOperatorsCache); return; }
       const mk = {
         id: sid((crypto.randomUUID && crypto.randomUUID()) || ('mk-' + Date.now())),
         type: meta.type,
-        label: meta.label,
+        label: extra.label || meta.label,
+        color: extra.color || null,
         x: clampedX,
         y: clampedY
       };
