@@ -68,57 +68,6 @@ function canManageRecords(){
 }
 
 function memberById(id){ return allPersonnel.find(p => p.id === id); }
-
-function toE164(phone){
-  const digits = (phone||'').replace(/\D/g,'');
-  return digits.length === 10 ? `+1${digits}` : `+${digits}`;
-}
-async function dispatchWebPush(title, body){
-  if(!currentProfile) return;
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if(!session) return;
-  try {
-    await fetch('/.netlify/functions/send-push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessToken: session.access_token,
-        agencyId: currentProfile.agency_id,
-        title, body
-      })
-    });
-  } catch(e){ console.warn('send-push', e); }
-}
-function calloutAlertTitle(mode, type){
-  const base = mode === 'deploy' ? 'DEPLOY' : mode === 'standby' ? 'STANDBY' : mode === 'standdown' ? 'STAND DOWN' : 'CALLOUT';
-  return type ? base + ' — ' + type : base;
-}
-async function fireCalloutAlert({ title, body }){
-  const t = title || 'OpsTac Callout';
-  const b = body || 'New activation';
-  dispatchWebPush(t, b);
-  if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  const payload = {
-    title: t,
-    body: b,
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    requireInteraction: true,
-    renotify: true,
-    silent: false,
-    tag: 'opstac-callout',
-    data: { url: '/dashboard.html' }
-  };
-  try {
-    if('serviceWorker' in navigator){
-      const reg = await navigator.serviceWorker.ready;
-      await reg.showNotification(payload.title, payload);
-      return;
-    }
-  } catch(e){ console.warn('sw notify', e); }
-  try { new Notification(payload.title, payload); } catch(e2){ console.warn('notify', e2); }
-}
-
 function mapsLink(address){ return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`; }
 function mapsLinkHtml(address, label){
   if(!address) return '';
@@ -360,7 +309,7 @@ async function loadOverview(){
 function renderOverviewStats(personnel, certs, ops, callouts){
   const ready = personnel.filter(p => p.status === 'ready').length;
   const certsDue = certs.filter(c => { const d = daysUntil(c.expires); return d !== null && d <= 30; }).length;
-  const activeOps = ops.filter(o => o.status === 'planning' || o.status === 'active').length;
+  const activeOps = ops.filter(o => o.status === 'planning').length;
   const pendingCallouts = callouts.filter(c => c.active && (c.callout_recipients||[]).some(r => r.ack !== 'acknowledged')).length;
 
   $('#overviewStats').innerHTML = `
@@ -385,17 +334,14 @@ function renderOverviewStatusBoard(personnel, certs){
   }).join('')}</div>`;
 }
 function renderOverviewOps(ops){
-  const active = ops.filter(o => o.status === 'planning' || o.status === 'active');
+  const active = ops.filter(o => o.status === 'planning');
   if(active.length === 0){ $('#overviewOps').innerHTML = `<div class="panel-empty">No active operations.</div>`; return; }
-  $('#overviewOps').innerHTML = active.slice(0,6).map(o => {
-    const label = o.status === 'active' ? 'Active' : 'Planning';
-    return `
+  $('#overviewOps').innerHTML = active.slice(0,6).map(o => `
     <div class="list-row" data-op-id="${o.id}">
-      <span class="pill warn"><span class="pill-dot"></span>${label}</span>
+      <span class="pill warn"><span class="pill-dot"></span>Planning</span>
       <div class="list-row-title">${o.name}</div>
       <div class="list-row-meta">${o.type || ''} ${o.date ? '· ' + o.date : ''}</div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
   $$('#overviewOps .list-row').forEach(row => row.addEventListener('click', () => {
     $$('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.section === 'operations'));
     $$('.section').forEach(s => s.classList.toggle('active', s.id === 'sec-operations'));
@@ -1066,8 +1012,8 @@ async function loadOperations(){
   const { data: ops } = await supabaseClient.from('operations').select('*').order('date', { ascending:false });
   if(!ops || ops.length === 0){ $('#opsListWrap').innerHTML = `<div class="panel-empty">No operations logged yet.</div>`; return; }
   $('#opsListWrap').innerHTML = ops.map(o => {
-    const statusCls = o.status === 'complete' ? 'good' : o.status === 'active' ? 'warn' : 'neutral';
-    const statusLabel = o.status === 'complete' ? 'Complete' : o.status === 'active' ? 'Active' : 'Planning';
+    const statusCls = o.status === 'complete' ? 'good' : 'warn';
+    const statusLabel = o.status === 'complete' ? 'Complete' : 'Planning';
     return `<div class="list-row" data-op-id="${o.id}">
       <span class="pill ${statusCls}"><span class="pill-dot"></span>${statusLabel}</span>
       <div class="list-row-title">${o.name}</div>
@@ -1124,7 +1070,6 @@ async function openOpDetail(opId){
   await loadCorePersonnel();
   const { data: op } = await supabaseClient.from('operations').select('*').eq('id', opId).single();
   const { data: operators } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', opId);
-  currentOperatorsCache = operators || [];
 
   renderOpDetail(op, operators || []);
 }
@@ -1138,22 +1083,20 @@ function renderOpDetail(op, operators){
         <div class="op-detail-title">${op.name}</div>
         <div class="op-detail-sub">${op.type||''} · ${op.date||''} · ${op.location||''}${mapsLinkHtml(op.location)}</div>
       </div>
-      <div style="display:flex; gap:8px;">
-        ${canManageCallouts() ? `<button class="btn btn-outline" id="opCalloutBtn">Callout Team</button>` : ''}
-        <button class="btn btn-outline" id="opPrintBtn">Print Report</button>
-        <button class="btn btn-outline" id="opPresentBtn">Export Presentation</button>
-        ${editable ? `<button class="btn btn-danger-outline" id="opDeleteBtn">Delete Operation</button>` : ''}
+      <div style="display:flex; gap:8px; align-items:center;">
+        ${canManageCallouts() ? `<button class="btn btn-primary-action" id="opCalloutBtn">Callout Team</button>` : ''}
+        <div class="brief-menu" id="opBriefMenu">
+          <button type="button" class="btn btn-outline" id="opBriefBtn">Brief ▾</button>
+          <div class="brief-menu-list">
+            <button type="button" id="opPrintBtn">Print report</button>
+            <button type="button" id="opPresentBtn">Export presentation</button>
+            ${editable ? `<button type="button" id="opDeleteBtn" style="color:var(--bad);">Delete operation</button>` : ''}
+          </div>
+        </div>
       </div>
     </div>
-    <div class="subtab-row">
-      <div class="subtab active" data-subtab="map">Map</div>
-      <div class="subtab" data-subtab="plan">Pre-Ops Plan</div>
-      <div class="subtab" data-subtab="log">Notes / Log</div>
-      <div class="subtab" data-subtab="chat">Op Chat</div>
-      <div class="subtab" data-subtab="debrief">Debrief</div>
-      <div class="subtab" data-subtab="callouts">Callouts</div>
-    </div>
-    <div class="subpanel active" id="opPanel-map">
+    <div class="op-workspace">
+    <div class="op-workspace-map subpanel active" id="opPanel-map">
       <div class="dash-map-tools">
         <input type="text" class="field-input" id="dashMapAddress" placeholder="Jump to address" style="flex:1; min-width:220px;" value="${(op.location||'').replace(/"/g,'&quot;')}">
         <button type="button" class="btn btn-outline" id="dashMapGo">Go</button>
@@ -1170,8 +1113,16 @@ function renderOpDetail(op, operators){
       
       
     </div>
-    <div class="subpanel" id="opPanel-plan">
+    <div class="op-workspace-plan" id="opPanel-plan">
       <div id="planFields"></div>
+    </div>
+    </div>
+    <div class="op-more-tabs">
+    <div class="subtab-row">
+      <div class="subtab" data-subtab="log">Notes / Log</div>
+      <div class="subtab" data-subtab="chat">Op Chat</div>
+      <div class="subtab" data-subtab="debrief">Debrief</div>
+      <div class="subtab" data-subtab="callouts">Callouts</div>
     </div>
     <div class="subpanel" id="opPanel-log">
       <div id="dashOpsLog"></div>
@@ -1185,7 +1136,16 @@ function renderOpDetail(op, operators){
     <div class="subpanel" id="opPanel-callouts">
       <div id="opCalloutsContent"></div>
     </div>
+    </div>
   `;
+
+  
+  const briefMenu = $('#opBriefMenu');
+  const briefBtn = $('#opBriefBtn');
+  if(briefBtn && briefMenu){
+    briefBtn.addEventListener('click', (e) => { e.stopPropagation(); briefMenu.classList.toggle('open'); });
+    document.addEventListener('click', () => briefMenu.classList.remove('open'));
+  }
 
   $('#opBackBtn').addEventListener('click', () => {
     $('#opsDetailView').style.display = 'none';
@@ -1214,7 +1174,6 @@ function renderOpDetail(op, operators){
     if(tab.dataset.subtab === 'callouts') renderOpCallouts(op.id);
     if(tab.dataset.subtab === 'log') renderDashOpsLog(currentOpCache || op);
     if(tab.dataset.subtab === 'chat') loadDashChat();
-    if(tab.dataset.subtab === 'map' && dashLiveMap) setTimeout(() => dashLiveMap.invalidateSize(), 80);
   }));
 
   try { renderPlan(op, editable); } catch(e){ console.error('plan', e); }
@@ -1222,6 +1181,164 @@ function renderOpDetail(op, operators){
   try { renderMapPalette(op, operators, editable); } catch(e){ console.error('palette', e); }
   setTimeout(() => { try { initDashLiveMap(op); renderDashStacks(op); } catch(e){ console.error('map', e); } }, 80);
 
+}
+
+async function renderExistingMapImage(op){
+  if(!op.map_image_url) return;
+  const { data, error } = await supabaseClient.storage.from('operation-maps').createSignedUrl(op.map_image_url, 3600);
+  if(error){
+    console.error('renderExistingMapImage: could not get signed URL', { path: op.map_image_url, error });
+    return;
+  }
+  $('#mapCanvas').classList.add('has-image');
+  if(op.map_image_ratio) $('#mapCanvas').style.aspectRatio = op.map_image_ratio;
+  $('#mapBgImage').src = data.signedUrl;
+  $('#mapBgImage').style.display = 'block';
+  $('#mapUploadPrompt').style.display = 'none';
+}
+
+async function renderOpCallouts(opId){
+  $('#opCalloutsContent').innerHTML = `<div class="loading-state">Loading...</div>`;
+  const { data: callouts } = await supabaseClient.from('callouts').select('*, callout_recipients(*)').eq('operation_id', opId).order('created_at', { ascending:false });
+  if(!callouts || callouts.length === 0){
+    $('#opCalloutsContent').innerHTML = `<div class="panel-empty">No callouts linked to this operation yet. Use "Callout Team" above to send one.</div>`;
+    return;
+  }
+  const methodLabel = { text:'Sent via Text', share:'Shared', logged:'Logged Verbally', 'signal-group':'Sent to Signal Group' };
+  $('#opCalloutsContent').innerHTML = callouts.map(co => {
+    const total = (co.callout_recipients||[]).length;
+    const acked = (co.callout_recipients||[]).filter(r => r.ack === 'acknowledged').length;
+    const modeCls = co.mode === 'deploy' ? 'bad' : 'warn';
+    const recipRows = (co.callout_recipients||[]).map(r => {
+      const m = memberById(r.member_id);
+      return `<div class="checklist-row" data-callout-id="${co.id}" data-member-id="${r.member_id}" style="cursor:${canManageCallouts()?'pointer':'default'};">
+        <span>${m ? m.name : '—'}</span>
+        <span class="pill ${r.ack==='acknowledged'?'good':'warn'}" style="margin-left:auto;"><span class="pill-dot"></span>${r.ack==='acknowledged'?'Acknowledged':'Pending'}</span>
+      </div>`;
+    }).join('');
+    return `<div class="list-row" style="cursor:default;">
+      <span class="pill ${modeCls}"><span class="pill-dot"></span>${co.mode==='deploy'?'Deploy':'Standby'}</span>
+      <div class="list-row-title">${co.type||'Callout'}</div>
+      <div class="list-row-meta">${co.date||''} ${co.location?'· '+co.location:''}${mapsLinkHtml(co.location)} · ${acked}/${total} acknowledged · ${methodLabel[co.method]||co.method}</div>
+      <div style="margin-top:10px;">${recipRows}</div>
+    </div>`;
+  }).join('');
+
+  if(canManageCallouts()){
+    $$('#opCalloutsContent .checklist-row[data-callout-id]').forEach(row => row.addEventListener('click', async () => {
+      const calloutId = row.dataset.calloutId, memberId = row.dataset.memberId;
+      const { data: current } = await supabaseClient.from('callout_recipients').select('ack').eq('callout_id', calloutId).eq('member_id', memberId).single();
+      const newAck = current && current.ack === 'acknowledged' ? 'pending' : 'acknowledged';
+      await supabaseClient.from('callout_recipients').update({ ack: newAck }).eq('callout_id', calloutId).eq('member_id', memberId);
+      renderOpCallouts(opId);
+    }));
+  }
+}
+
+const DASH_LOCS = [
+  { type:'command', label:'Command' },
+  { type:'ems', label:'EMS' },
+  { type:'lz', label:'LZ' },
+  { type:'vehicle', label:'Vehicle' },
+  { type:'rally', label:'Rally' },
+  { type:'staging', label:'Staging' },
+];
+function operatorUnitLabel(person){
+  if(!person) return '?';
+  const raw = String(person.callsign || person.unit_number || '').trim();
+  if(raw) return raw.slice(0,6);
+  return String(person.name||'?').split(' ').map(w=>w[0]).join('').slice(0,3).toUpperCase();
+}
+function renderMapPalette(op, operators, editable){
+  const loc = DASH_LOCS.map(l => `<button type="button" class="btn btn-outline dash-loc ${dashPlaceMode===l.type?'btn-primary':''}" data-loc="${l.type}" style="font-size:11px; padding:6px 8px;">${l.label}</button>`).join('');
+  const people = allPersonnel.map(p => {
+    const placed = (operators||[]).some(o => o.member_id === p.id);
+    const mark = operatorUnitLabel(p);
+    return `<button type="button" class="btn btn-outline ${armedOperatorId===p.id?'btn-primary':''}" data-member-id="${p.id}" style="font-size:11px; padding:6px 8px;${placed?'box-shadow:0 0 0 2px var(--olive) inset;':''}">${mark} · ${p.name}</button>`;
+  }).join('');
+  $('#opPalette').innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 8px;">${loc}</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">${people}</div>
+    <div class="list-row-meta" id="dashMapHint" style="margin-top:8px;">Select a type or person, click the map to place. Drag to move. Click a pin, then Remove selected.</div>`;
+  if(!editable) return;
+  $$('#opPalette [data-loc]').forEach(btn => btn.addEventListener('click', () => {
+    dashPlaceMode = dashPlaceMode === btn.dataset.loc ? null : btn.dataset.loc;
+    armedOperatorId = null;
+    renderMapPalette(op, operators, editable);
+  }));
+  $$('#opPalette [data-member-id]').forEach(btn => btn.addEventListener('click', () => {
+    armedOperatorId = armedOperatorId === btn.dataset.memberId ? null : btn.dataset.memberId;
+    dashPlaceMode = null;
+    renderMapPalette(op, operators, editable);
+  }));
+}
+
+function renderMapPins(operators){
+  const canvas = $('#mapCanvas');
+  if(!canvas) return;
+  $$('.map-pin').forEach(p => p.remove());
+  operators.forEach(o => {
+    const m = memberById(o.member_id);
+    if(!m) return;
+    const pin = document.createElement('div');
+    pin.className = 'map-pin';
+    pin.style.left = o.x + '%';
+    pin.style.top = o.y + '%';
+    pin.textContent = m.name.split(' ').map(w=>w[0]).slice(-2).join('');
+    pin.title = m.name;
+    pin.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if(!canEditOps()) return;
+      await supabaseClient.from('operation_operators').delete().eq('operation_id', currentOpId).eq('member_id', o.member_id);
+      const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+      renderMapPins(refreshed || []);
+      renderMapPalette({}, refreshed || [], canEditOps());
+    });
+    canvas.appendChild(pin);
+  });
+}
+
+document.addEventListener('click', async (e) => {
+  if(e.target.id === 'mapCanvas' && canEditOps() && armedOperatorId){
+    const rect = e.target.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+    await supabaseClient.from('operation_operators').upsert({
+      operation_id: currentOpId, member_id: armedOperatorId,
+      x: Math.max(3,Math.min(97,x)), y: Math.max(3,Math.min(97,y)),
+    }, { onConflict: 'operation_id,member_id' });
+    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+    renderMapPins(refreshed || []);
+  }
+});
+
+function wireMapUpload(op, editable){
+  if(!editable) return;
+  $('#mapUploadPrompt').addEventListener('click', () => $('#mapImageInput').click());
+  $('#mapImageInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const path = `${currentProfile.agency_id}/${currentOpId}/${Date.now()}-${file.name}`;
+    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
+    if(error){ alert('Upload failed: ' + error.message); return; }
+
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      img.onload = async () => {
+        await supabaseClient.from('operations').update({
+          map_image_url: path, map_image_ratio: `${img.naturalWidth} / ${img.naturalHeight}`,
+        }).eq('id', currentOpId);
+        const { data: signed } = await supabaseClient.storage.from('operation-maps').createSignedUrl(path, 3600);
+        $('#mapCanvas').classList.add('has-image');
+        $('#mapCanvas').style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+        $('#mapBgImage').src = signed ? signed.signedUrl : '';
+        $('#mapBgImage').style.display = 'block';
+        $('#mapUploadPrompt').style.display = 'none';
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 const PLAN_FIELDS = [
@@ -1260,13 +1377,7 @@ function renderPlan(op, editable){
       ${editable
         ? `<textarea class="field-textarea" data-plan-field="${f.key}" placeholder="Not yet filled in...">${plan[f.key]||''}</textarea>`
         : `<div class="field-textarea" style="color:var(--text-dim);">${plan[f.key] || 'Not yet filled in'}</div>`}
-    </div>`).join('') + (editable
-      ? (op.status==='planning'
-          ? `<button class="btn btn-primary" id="activateOpBtn">Mark Operation Active</button>`
-          : op.status==='active'
-            ? `<button class="btn btn-primary" id="completeOpBtn">Mark Operation Complete</button>`
-            : '')
-      : '');
+    </div>`).join('') + (op.status==='planning' && editable ? `<button class="btn btn-primary" id="completeOpBtn">Mark Operation Complete</button>` : '');
 
   loadTargetPhotos(op.id, editable);
   loadOpAssets(op.id, editable);
@@ -1298,23 +1409,10 @@ function renderPlan(op, editable){
       await supabaseClient.from('operations').update({ plan: newPlan }).eq('id', currentOpId);
       op.plan = newPlan;
     }));
-    const activateBtn = $('#activateOpBtn');
-    if(activateBtn) activateBtn.addEventListener('click', async () => {
-      const { error } = await supabaseClient.from('operations').update({ status:'active' }).eq('id', currentOpId);
-      if(error){ alert('Could not activate operation: ' + error.message); return; }
-      op.status = 'active';
-      if(currentOpCache) currentOpCache.status = 'active';
-      renderPlan(op, editable);
-    });
     const completeBtn = $('#completeOpBtn');
     if(completeBtn) completeBtn.addEventListener('click', async () => {
-      const debrief = { ...(op.debrief || {}) };
-      const { error } = await supabaseClient.from('operations').update({ status:'complete', debrief }).eq('id', currentOpId);
-      if(error){ alert('Could not complete operation: ' + error.message); return; }
-      op.status = 'complete';
-      op.debrief = debrief;
-      if(currentOpCache){ currentOpCache.status = 'complete'; currentOpCache.debrief = debrief; }
-      renderPlan(op, editable);
+      await supabaseClient.from('operations').update({ status:'complete', debrief:{} }).eq('id', currentOpId);
+      op.status = 'complete'; op.debrief = {};
       renderDebrief(op, editable);
       $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
       $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
@@ -1629,9 +1727,7 @@ async function loadCallouts(){
   $$('[data-standdown]').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     if(!confirm('Stand down this callout and notify the team?')) return;
-    const standMsg = 'SRT STAND DOWN. Return to normal status. Do not respond.';
-    await supabaseClient.from('callouts').update({ mode:'standdown', active:false, message:standMsg }).eq('id', btn.dataset.standdown);
-    fireCalloutAlert({ title: 'STAND DOWN', body: standMsg });
+    await supabaseClient.from('callouts').update({ mode:'standdown', active:false, message:'SRT STAND DOWN. Return to normal status. Do not respond.' }).eq('id', btn.dataset.standdown);
     loadCallouts();
   }));
   $$('[data-edit-callout]').forEach(btn => btn.addEventListener('click', (e) => {
@@ -1668,6 +1764,14 @@ function openEditCalloutModal(callout){
     </div>
     <div class="field-group"><label class="field-label">Location</label><input type="text" id="eCoLocation" value="${callout.location||''}"></div>
     <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="eCoRally" value="${callout.rally_location||''}"></div>
+    <div class="field-group">
+      <label class="field-label">Rally Point Map (optional)</label>
+      <input type="file" accept="image/*" id="eCoRallyMapInput" style="display:none;">
+      <div class="map-canvas ${callout.rally_map_image_url?'has-image':''}" id="eCoRallyMapCanvas" style="${callout.rally_map_image_url && callout.rally_map_ratio ? `aspect-ratio:${callout.rally_map_ratio};`:''}">
+        <div class="map-upload-prompt" id="eCoRallyMapPrompt" style="${callout.rally_map_image_url?'display:none;':''}">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
+        <img id="eCoRallyMapImg" style="${callout.rally_map_image_url?'display:block;':'display:none;'}">
+      </div>
+    </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="eCoMessage">${callout.message||''}</textarea></div>
     <div class="settings-row" style="padding:10px 0;">
       <div><div class="settings-label">Active</div><div class="settings-sub">Turn off once this callout is resolved</div></div>
@@ -1682,11 +1786,61 @@ function openEditCalloutModal(callout){
   `);
   let eCoMode = callout.mode;
   let eCoActiveVal = !!callout.active;
-  // Live map preferred — preserve any existing rally map fields; no screenshot attach UI.
   let rallyMapPath = callout.rally_map_image_url || null;
   let rallyMapRatio = callout.rally_map_ratio || null;
   let rallyPinX = callout.rally_pin_x != null ? callout.rally_pin_x : null;
   let rallyPinY = callout.rally_pin_y != null ? callout.rally_pin_y : null;
+
+  if(rallyMapPath){
+    supabaseClient.storage.from('operation-maps').createSignedUrl(rallyMapPath, 3600).then(({data, error}) => {
+      if(error){ console.error('Edit callout rally map: could not get signed URL', { path: rallyMapPath, error }); return; }
+      $('#eCoRallyMapImg').src = data.signedUrl;
+    });
+    if(rallyPinX != null && rallyPinY != null){
+      const pin = document.createElement('div');
+      pin.className = 'map-pin rally-pin-marker';
+      pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
+      pin.textContent = 'R';
+      $('#eCoRallyMapCanvas').appendChild(pin);
+    }
+  }
+  $('#eCoRallyMapPrompt').addEventListener('click', () => $('#eCoRallyMapInput').click());
+  $('#eCoRallyMapInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const path = `${currentProfile.agency_id}/callouts/${callout.id}/${Date.now()}-${file.name}`;
+    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
+    if(error){ alert('Upload failed: ' + error.message); return; }
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      img.onload = () => {
+        rallyMapPath = path;
+        rallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+        $('#eCoRallyMapCanvas').classList.add('has-image');
+        $('#eCoRallyMapCanvas').style.aspectRatio = rallyMapRatio;
+        $('#eCoRallyMapImg').src = ev.target.result;
+        $('#eCoRallyMapImg').style.display = 'block';
+        $('#eCoRallyMapPrompt').style.display = 'none';
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  $('#eCoRallyMapCanvas').addEventListener('click', (e) => {
+    if(!rallyMapPath || e.target.closest('#eCoRallyMapPrompt')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+    rallyPinX = Math.max(3, Math.min(97, x));
+    rallyPinY = Math.max(3, Math.min(97, y));
+    $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
+    const pin = document.createElement('div');
+    pin.className = 'map-pin rally-pin-marker';
+    pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
+    pin.textContent = 'R';
+    $('#eCoRallyMapCanvas').appendChild(pin);
+  });
 
   $$('#eCoModeRow .choice-btn').forEach(btn => btn.addEventListener('click', () => {
     eCoMode = btn.dataset.mode;
@@ -1724,15 +1878,11 @@ $('#newCalloutBtn').addEventListener('click', () => openNewCalloutModal(null));
 
 async function openNewCalloutModal(lockedOp){
   await loadCorePersonnel();
-  if(!currentSettings){
-    const { data: settings } = await supabaseClient.from('agency_settings').select('*').eq('agency_id', currentProfile.agency_id).single();
-    currentSettings = settings;
-  }
   let mode = null;
   let linkedOperationId = lockedOp ? lockedOp.id : '';
   const selected = new Set(allPersonnel.filter(p => p.on_call).map(p => p.id));
-  // Live map preferred — no rally screenshot attach on desk callouts.
   let rallyMapPath = null, rallyMapRatio = null, rallyPinX = null, rallyPinY = null;
+  const rallyMapId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
 
   let opLinkHtml;
   if(lockedOp){
@@ -1740,7 +1890,7 @@ async function openNewCalloutModal(lockedOp){
       <div class="field-static" style="color:var(--olive-bright);">${lockedOp.name}</div></div>`;
   } else {
     const { data: ops } = await supabaseClient.from('operations').select('id, name, status').order('date', { ascending:false });
-    const opOptions = (ops||[]).map(o => `<option value="${o.id}">${o.name} (${o.status==='complete'?'Complete':o.status==='active'?'Active':'Planning'})</option>`).join('');
+    const opOptions = (ops||[]).map(o => `<option value="${o.id}">${o.name} (${o.status==='complete'?'Complete':'Planning'})</option>`).join('');
     opLinkHtml = `<div class="field-group"><label class="field-label">Link to Operation (optional)</label>
       <select id="mCoOperation">
         <option value="">— None —</option>
@@ -1765,16 +1915,17 @@ async function openNewCalloutModal(lockedOp){
     </div>
     <div class="field-group"><label class="field-label">Location</label><input type="text" id="mCoLocation"></div>
     <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="mCoRally"></div>
+    <div class="field-group">
+      <label class="field-label">Rally Point Map (optional)</label>
+      <input type="file" accept="image/*" id="mCoRallyMapInput" style="display:none;">
+      <div class="map-canvas" id="mCoRallyMapCanvas">
+        <div class="map-upload-prompt" id="mCoRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
+        <img id="mCoRallyMapImg" style="display:none;">
+      </div>
+    </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="mCoMessage">SRT ACTIVATION. Report to staging ASAP. Await further instructions.</textarea></div>
     <div class="field-group"><label class="field-label">Select Team</label><div id="mCoRoster"></div></div>
-    <div class="modal-actions" style="flex-wrap:wrap; gap:8px;">
-      <button class="btn btn-ghost" id="mCancel">Cancel</button>
-      <button class="btn btn-ghost" id="mLogOnly">Log only</button>
-      <button class="btn btn-ghost" id="mSendShare">Share</button>
-      <button class="btn btn-ghost" id="mSendSignal" style="display:none;">Signal group</button>
-      <button class="btn btn-primary" id="mSendText">Send via Text</button>
-    </div>
-    <div id="mSignalHint" style="display:none; font-size:11.5px; color:var(--text-dim); margin-top:8px; line-height:1.5;">Add a Signal group link in Settings to enable Signal group send.</div>
+    <div class="modal-actions"><button class="btn btn-ghost" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Log Callout</button></div>
   `);
 
   if(!lockedOp){
@@ -1796,23 +1947,54 @@ async function openNewCalloutModal(lockedOp){
     $$('#mCoModeRow .choice-btn').forEach(b => b.classList.toggle('selected', b===btn));
   }));
 
-  
-  const hasSignalGroup = !!(currentSettings && currentSettings.signal_group_link);
-  if($('#mSendSignal')) $('#mSendSignal').style.display = hasSignalGroup ? '' : 'none';
-  if($('#mSignalHint')) $('#mSignalHint').style.display = hasSignalGroup ? 'none' : 'block';
-
-  async function finalizeDeskCallout(method){
-    if(selected.size === 0){ alert('Select at least one team member.'); return null; }
-    if(!mode){ alert('Select Standby Only or Deploy.'); return null; }
-    const message = $('#mCoMessage').value.trim();
-    if(!message){ alert('Enter a message.'); return null; }
+  $('#mCoRallyMapPrompt').addEventListener('click', () => $('#mCoRallyMapInput').click());
+  $('#mCoRallyMapInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const path = `${currentProfile.agency_id}/callouts/${rallyMapId}/${Date.now()}-${file.name}`;
+    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
+    if(error){ alert('Upload failed: ' + error.message); return; }
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      img.onload = () => {
+        rallyMapPath = path;
+        rallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+        $('#mCoRallyMapCanvas').classList.add('has-image');
+        $('#mCoRallyMapCanvas').style.aspectRatio = rallyMapRatio;
+        $('#mCoRallyMapImg').src = ev.target.result;
+        $('#mCoRallyMapImg').style.display = 'block';
+        $('#mCoRallyMapPrompt').style.display = 'none';
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  $('#mCoRallyMapCanvas').addEventListener('click', (e) => {
+    if(!rallyMapPath || e.target.closest('#mCoRallyMapPrompt')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+    rallyPinX = Math.max(3, Math.min(97, x));
+    rallyPinY = Math.max(3, Math.min(97, y));
+    $$('.rally-pin-marker').forEach(p => p.remove());
+    const pin = document.createElement('div');
+    pin.className = 'map-pin rally-pin-marker';
+    pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
+    pin.textContent = 'R';
+    $('#mCoRallyMapCanvas').appendChild(pin);
+  });
+  $('#mCancel').addEventListener('click', closeModal);
+  $('#mSave').addEventListener('click', async () => {
+    if(selected.size === 0){ alert('Select at least one team member.'); return; }
+    if(!mode){ alert('Select Standby Only or Deploy.'); return; }
 
     let opId = linkedOperationId;
     if(!lockedOp){
       const picked = $('#mCoOperation').value;
       if(picked === '__new__'){
         const newName = $('#mCoNewOpName').value.trim();
-        if(!newName){ alert('Enter a name for the new operation.'); return null; }
+        if(!newName){ alert('Enter a name for the new operation.'); return; }
         const { data: newOp } = await supabaseClient.from('operations').insert({
           agency_id: currentProfile.agency_id, name: newName, status:'planning', plan:{},
           location: $('#mCoLocation').value.trim() || null,
@@ -1823,62 +2005,19 @@ async function openNewCalloutModal(lockedOp){
       }
     }
 
-    const now = new Date();
     const { data: callout } = await supabaseClient.from('callouts').insert({
       agency_id: currentProfile.agency_id,
       type: $('#mCoType').value.trim() || 'SRT Activation',
-      date: now.toISOString().slice(0,10), time: now.toTimeString().slice(0,5),
       location: $('#mCoLocation').value.trim() || null,
       rally_location: $('#mCoRally').value.trim() || null,
-      mode, method, message, active: true,
+      mode, method: 'logged', message: $('#mCoMessage').value.trim(), active: true,
       operation_id: opId || null,
       rally_map_image_url: rallyMapPath, rally_map_ratio: rallyMapRatio,
       rally_pin_x: rallyPinX, rally_pin_y: rallyPinY,
     }).select().single();
     if(callout){
       await supabaseClient.from('callout_recipients').insert([...selected].map(memberId => ({ callout_id: callout.id, member_id: memberId, ack:'pending' })));
-      fireCalloutAlert({
-        title: calloutAlertTitle(callout.mode, callout.type),
-        body: callout.message || callout.location || 'New activation'
-      });
     }
-    return callout;
-  }
-
-  $('#mCancel').addEventListener('click', closeModal);
-  $('#mSendText').addEventListener('click', async () => {
-    const co = await finalizeDeskCallout('text');
-    if(!co) return;
-    const numbers = [...selected].map(id => toE164((memberById(id)||{}).phone)).filter(Boolean).join(',');
-    if(numbers) window.open(`sms:${numbers}?body=${encodeURIComponent(co.message)}`, '_self');
-    else alert('No phone numbers on the selected roster — callout was logged and push was sent.');
-    closeModal();
-    loadCallouts();
-  });
-  $('#mSendSignal') && $('#mSendSignal').addEventListener('click', async () => {
-    const signalWindow = window.open('', '_blank');
-    const co = await finalizeDeskCallout('signal-group');
-    if(!co){ if(signalWindow) signalWindow.close(); return; }
-    try { await navigator.clipboard.writeText(co.message); } catch(e){ /* optional */ }
-    const link = currentSettings && currentSettings.signal_group_link;
-    if(signalWindow && link) signalWindow.location.href = link;
-    else if(link) window.open(link, '_blank');
-    closeModal();
-    loadCallouts();
-  });
-  $('#mSendShare').addEventListener('click', async () => {
-    const co = await finalizeDeskCallout('share');
-    if(!co) return;
-    const recipientNames = [...selected].map(id => (memberById(id)||{}).name || 'Unknown').join(', ');
-    const shareText = `${co.message}\n\nTeam: ${recipientNames}`;
-    if(navigator.share) navigator.share({ title: co.type, text: shareText }).catch(()=>{});
-    else alert('Sharing isn\'t supported in this browser. The callout has been logged — use Send via Text, or copy this message:\n\n' + shareText);
-    closeModal();
-    loadCallouts();
-  });
-  $('#mLogOnly').addEventListener('click', async () => {
-    const co = await finalizeDeskCallout('logged');
-    if(!co) return;
     closeModal();
     loadCallouts();
   });
@@ -2248,9 +2387,6 @@ function initDashLiveMap(op){
       await saveDashMarkers((currentOpCache.map_markers||[]).map(m => String(m.id)===String(dashSelected.id) ? { ...m, rot:val } : m));
     } else if(dashSelected.kind==='stack'){
       await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(dashSelected.id) ? { ...s, rot:val } : s));
-    } else if(dashSelected.kind==='pin'){
-      await supabaseClient.from('operation_operators').update({ rot: val }).eq('operation_id', currentOpId).eq('member_id', dashSelected.id);
-      currentOperatorsCache = (currentOperatorsCache||[]).map(o => String(o.member_id)===String(dashSelected.id) ? { ...o, rot:val } : o);
     }
     rebuildDashMarkers(currentOpCache);
   };
@@ -2321,7 +2457,7 @@ function rebuildDashMarkers(op){
   (op.map_markers||[]).forEach(mk => {
     if(mk.lat == null) return;
     const m = L.marker([mk.lat, mk.lng], { icon: liveIcon(mk.label||mk.type, colorFor(mk.type), mk.rot, mk.type==='medic'?'ems':mk.type), draggable: editable });
-    m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
+    m.on('click', () => { dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
     m.bindPopup(`${mk.label||mk.type}<br><button type="button" class="btn btn-danger-outline" data-rm-marker="${mk.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-marker="'+mk.id+'"]');
@@ -2339,12 +2475,6 @@ function rebuildDashMarkers(op){
   (op.map_stacks||[]).forEach(st => {
     if(st.lat == null) return;
     const m = L.marker([st.lat, st.lng], { icon: liveIcon(st.name||'Entry', '#e4c35a', st.rot, 'stack'), draggable: editable });
-    m.on('click', (ev) => {
-      L.DomEvent.stopPropagation(ev);
-      dashSelected = { kind:'stack', id: st.id };
-      const r=document.getElementById('dashRotate');
-      if(r){ r.value=String(st.rot||0); document.getElementById('dashRotateDeg').textContent=(st.rot||0)+'°'; }
-    });
     m.bindPopup(`${st.name||'Stack'}<br><button type="button" class="btn btn-danger-outline" data-rm-stack="${st.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-stack="'+st.id+'"]');
@@ -2364,12 +2494,6 @@ function rebuildDashMarkers(op){
     const person = memberById(o.member_id);
     const m = L.marker([o.lat, o.lng], { icon: liveIcon(operatorUnitLabel(person), '#e4c35a', o.rot, 'person'), draggable: editable });
     const name = person ? person.name : 'Operator';
-    m.on('click', (ev) => {
-      L.DomEvent.stopPropagation(ev);
-      dashSelected = { kind:'pin', id: o.member_id };
-      const r=document.getElementById('dashRotate');
-      if(r){ r.value=String(o.rot||0); document.getElementById('dashRotateDeg').textContent=(o.rot||0)+'°'; }
-    });
     m.bindPopup(`${name}<br><button type="button" class="btn btn-danger-outline" data-rm-pin="${o.member_id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
       const btn = document.querySelector('[data-rm-pin="'+o.member_id+'"]');
