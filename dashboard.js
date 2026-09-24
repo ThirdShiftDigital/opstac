@@ -1095,8 +1095,16 @@ function renderOpDetail(op, operators){
         </div>
       </div>
     </div>
-    <div class="op-workspace">
-    <div class="op-workspace-map subpanel active" id="opPanel-map">
+    <div class="op-rail" id="opRail">
+      <div class="op-rail-tab active" data-subtab="map">Map</div>
+      <div class="op-rail-tab" data-subtab="plan">Plan</div>
+      <div class="op-rail-tab" data-subtab="stacks">Stacks</div>
+      <div class="op-rail-tab" data-subtab="log">Notes</div>
+      <div class="op-rail-tab" data-subtab="chat">Chat</div>
+      <div class="op-rail-tab" data-subtab="debrief">Debrief</div>
+      <div class="op-rail-tab" data-subtab="callouts">Callouts</div>
+    </div>
+    <div class="subpanel active" id="opPanel-map">
       <div class="dash-map-tools">
         <input type="text" class="field-input" id="dashMapAddress" placeholder="Jump to address" style="flex:1; min-width:220px;" value="${(op.location||'').replace(/"/g,'&quot;')}">
         <button type="button" class="btn btn-outline" id="dashMapGo">Go</button>
@@ -1109,20 +1117,14 @@ function renderOpDetail(op, operators){
       </div>
       <div id="dashLiveMap" style="height:70vh; min-height:520px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
       <div class="op-palette" id="opPalette"></div>
-      <div id="dashStackEditor" style="margin-top:16px;"></div>
       
       
     </div>
-    <div class="op-workspace-plan" id="opPanel-plan">
+    <div class="subpanel" id="opPanel-plan">
       <div id="planFields"></div>
     </div>
-    </div>
-    <div class="op-more-tabs">
-    <div class="subtab-row">
-      <div class="subtab" data-subtab="log">Notes / Log</div>
-      <div class="subtab" data-subtab="chat">Op Chat</div>
-      <div class="subtab" data-subtab="debrief">Debrief</div>
-      <div class="subtab" data-subtab="callouts">Callouts</div>
+    <div class="subpanel" id="opPanel-stacks">
+      <div id="dashStackEditor"></div>
     </div>
     <div class="subpanel" id="opPanel-log">
       <div id="dashOpsLog"></div>
@@ -1135,7 +1137,6 @@ function renderOpDetail(op, operators){
     </div>
     <div class="subpanel" id="opPanel-callouts">
       <div id="opCalloutsContent"></div>
-    </div>
     </div>
   `;
 
@@ -1168,12 +1169,14 @@ function renderOpDetail(op, operators){
   const calloutBtn = $('#opCalloutBtn');
   if(calloutBtn) calloutBtn.addEventListener('click', () => openNewCalloutModal({ id: op.id, name: op.name }));
 
-  $$('.subtab').forEach(tab => tab.addEventListener('click', () => {
-    $$('.subtab').forEach(t => t.classList.toggle('active', t===tab));
+  $$('.op-rail-tab').forEach(tab => tab.addEventListener('click', () => {
+    $$('.op-rail-tab').forEach(t => t.classList.toggle('active', t===tab));
     $$('.subpanel').forEach(p => p.classList.toggle('active', p.id === `opPanel-${tab.dataset.subtab}`));
     if(tab.dataset.subtab === 'callouts') renderOpCallouts(op.id);
     if(tab.dataset.subtab === 'log') renderDashOpsLog(currentOpCache || op);
     if(tab.dataset.subtab === 'chat') loadDashChat();
+    if(tab.dataset.subtab === 'stacks') renderDashStacks(currentOpCache || op);
+    if(tab.dataset.subtab === 'map' && dashLiveMap) setTimeout(() => dashLiveMap.invalidateSize(), 80);
   }));
 
   try { renderPlan(op, editable); } catch(e){ console.error('plan', e); }
@@ -2597,50 +2600,64 @@ function renderDashStacks(op){
     const members = st.members || [];
     const rows = members.map((m,i) => {
       const person = memberById(m.member_id);
-      return `<div style="display:flex; gap:8px; align-items:center; padding:4px 0;">
-        <span class="list-row-meta" style="width:18px;">${i+1}</span>
-        <span>${person ? person.name : 'Unknown'}</span>
-        <button type="button" class="btn btn-ghost" data-st="${st.id}" data-rm="${i}" style="margin-left:auto; font-size:11px;">×</button>
+      const unit = person ? operatorUnitLabel(person) : '';
+      return `<div style="display:flex; gap:6px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line);">
+        <span class="list-row-meta" style="width:16px; font-weight:700;">${i+1}</span>
+        <span style="flex:1; font-size:13px;">${unit ? `<strong>${unit}</strong> · ` : ''}${person ? person.name : 'Unknown'}</span>
+        <button type="button" class="btn btn-ghost" data-st="${st.id}" data-mv="${i}" data-dir="-1" ${i===0?'disabled':''} style="font-size:11px; padding:2px 6px;">↑</button>
+        <button type="button" class="btn btn-ghost" data-st="${st.id}" data-mv="${i}" data-dir="1" ${i===members.length-1?'disabled':''} style="font-size:11px; padding:2px 6px;">↓</button>
+        <button type="button" class="btn btn-ghost" data-st="${st.id}" data-rm="${i}" style="font-size:12px;">×</button>
       </div>`;
-    }).join('') || '<div class="list-row-meta">No one assigned yet.</div>';
+    }).join('') || '<div class="list-row-meta" style="padding:6px 0;">Empty — add names below</div>';
     const placed = st.lat != null;
-    return `<div class="list-row" style="cursor:default;">
-      <div style="display:flex; gap:8px; align-items:center;">
-        <input class="field-input" data-st-name="${st.id}" value="${String(st.name||'Stack').replace(/"/g,'&quot;')}" style="max-width:220px; font-weight:600;">
-        <span class="pill ${placed?'good':'warn'}"><span class="pill-dot"></span>${placed?'On map':'Not placed'}</span>
-        <button type="button" class="btn btn-outline" data-st-place="${st.id}" style="font-size:12px;">${placed?'Move on map':'Place on map'}</button>
-        <button type="button" class="btn btn-danger-outline" data-st-del="${st.id}" style="font-size:12px;">Delete</button>
+    return `<div class="panel" style="margin-bottom:10px;">
+      <div class="panel-header" style="padding:10px 12px;">
+        <input class="field-input" data-st-name="${st.id}" value="${String(st.name||'Stack').replace(/"/g,'&quot;')}" style="font-weight:600; font-size:13px; max-width:140px; padding:6px 8px;">
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button type="button" class="btn ${placed?'btn-outline':'btn-primary'}" data-st-place="${st.id}" style="font-size:11px; padding:6px 10px;">${placed?'Move':'Place'}</button>
+          <button type="button" class="btn btn-ghost" data-st-del="${st.id}" style="font-size:12px; color:var(--bad);">×</button>
+        </div>
       </div>
-      ${rows}
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <select class="field-input" data-st-addsel="${st.id}" style="max-width:260px;"><option value="">Add operator in order…</option>${peopleOpts}</select>
-        <button type="button" class="btn btn-primary" data-st-add="${st.id}" style="font-size:12px;">Add</button>
+      <div style="padding:4px 12px 10px;">${rows}
+        <select class="field-input" data-st-addsel="${st.id}" data-st-add="${st.id}" style="margin-top:8px; font-size:12px;">
+          <option value="">Add next in stack…</option>${peopleOpts}
+        </select>
       </div>
     </div>`;
   }).join('');
-  el.innerHTML = `<div class="page-title" style="font-size:16px; margin:8px 0;">Entry stacks</div>
-    <div class="list-row-meta" style="margin-bottom:8px;">Build the lineup here, then Place on map. Same stack mark as the phone.</div>
-    ${cards}
-    <div style="display:flex; gap:8px; margin-top:10px;">
-      <input class="field-input" id="newStackName" placeholder="Stack name (Entry 1, Bravo…)" style="max-width:240px;">
-      <button type="button" class="btn btn-primary" id="newStackBtn">New stack</button>
-    </div>`;
+  el.innerHTML = `<div class="settings-group-title" style="margin:0 0 8px;">Stacks</div>
+    ${cards || '<div class="list-row-meta" style="margin-bottom:8px;">No stacks yet.</div>'}
+    <button type="button" class="btn btn-outline" id="newStackBtn" style="width:100%; margin-bottom:18px;">+ New stack</button>`;
   const mk = document.getElementById('newStackBtn');
   if(mk) mk.onclick = async () => {
-    const name = (document.getElementById('newStackName').value || '').trim() || ('Entry ' + (stacks.length+1));
+    const name = 'Entry ' + (stacks.length+1);
     await saveDashStacks([...stacks, { id: Date.now().toString(36), name, members: [] }]);
     renderDashStacks(currentOpCache);
   };
+  el.querySelectorAll('[data-st-addsel]').forEach(sel => sel.addEventListener('change', async () => {
+    const id = sel.dataset.stAddsel;
+    if(!sel.value) return;
+    await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: [...(s.members||[]), { member_id: sel.value }] } : s));
+    renderDashStacks(currentOpCache);
+  }));
+  el.querySelectorAll('[data-mv]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = btn.dataset.st;
+    const idx = Number(btn.dataset.mv);
+    const dir = Number(btn.dataset.dir);
+    const next = (currentOpCache.map_stacks||[]).map(s => {
+      if(String(s.id)!==String(id)) return s;
+      const members = [...(s.members||[])];
+      const j = idx + dir;
+      if(j<0 || j>=members.length) return s;
+      const tmp = members[idx]; members[idx] = members[j]; members[j] = tmp;
+      return { ...s, members };
+    });
+    await saveDashStacks(next);
+    renderDashStacks(currentOpCache);
+  }));
   el.querySelectorAll('[data-st-name]').forEach(inp => inp.addEventListener('blur', async () => {
     const id = inp.dataset.stName;
     await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, name: inp.value.trim() || s.name } : s));
-  }));
-  el.querySelectorAll('[data-st-add]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = btn.dataset.stAdd;
-    const sel = el.querySelector('[data-st-addsel="'+id+'"]');
-    if(!sel || !sel.value) return;
-    await saveDashStacks((currentOpCache.map_stacks||[]).map(s => String(s.id)===String(id) ? { ...s, members: [...(s.members||[]), { member_id: sel.value }] } : s));
-    renderDashStacks(currentOpCache);
   }));
   el.querySelectorAll('[data-rm]').forEach(btn => btn.addEventListener('click', async () => {
     const id = btn.dataset.st;
