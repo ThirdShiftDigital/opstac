@@ -1345,56 +1345,191 @@ function wireMapUpload(op, editable){
 }
 
 const PLAN_FIELDS = [
-  { key:'objective', label:'Objective' }, { key:'approach', label:'Approach / Entry Plan' },
-  { key:'rallyPoint', label:'Rally Point' }, { key:'comms', label:'Communications Plan' },
-  { key:'contingencies', label:'Contingencies' }, { key:'equipment', label:'Equipment Needed' },
+  { key:'objective', label:'Objective' },
+  { key:'approach', label:'Approach / Entry Plan' },
+  { key:'rallyPoint', label:'Rally / Staging' },
+  { key:'comms', label:'Communications Plan' },
+  { key:'contingencies', label:'Contingencies' },
+  { key:'equipment', label:'Equipment Needed' },
 ];
+
+async function persistPlan(op){
+  currentOpCache.plan = op.plan;
+  await supabaseClient.from('operations').update({ plan: op.plan }).eq('id', currentOpId);
+}
+
+function planInput(editable, key, val, ph=''){
+  if(!editable) return `<div class="field-textarea" style="min-height:auto; color:var(--text-dim);">${val || '—'}</div>`;
+  return `<input class="field-input" data-plan-field="${key}" value="${String(val||'').replace(/"/g,'&quot;')}" placeholder="${ph}">`;
+}
+function planArea(editable, key, val, ph=''){
+  if(!editable) return `<div class="field-textarea" style="color:var(--text-dim);">${val || '—'}</div>`;
+  return `<textarea class="field-textarea" data-plan-field="${key}" placeholder="${ph}">${val||''}</textarea>`;
+}
+
 function renderPlan(op, editable){
   const plan = op.plan || {};
   const commanderOptions = `<option value="">Not yet designated</option>` +
     allPersonnel.map(p => `<option value="${p.id}" ${op.incident_commander_personnel_id===p.id?'selected':''}>${p.name}</option>`).join('');
 
+  const agencies = Array.isArray(plan.agencies) ? plan.agencies : [];
+  const suspects = Array.isArray(plan.suspects) ? plan.suspects : [];
+  const vehicles = Array.isArray(plan.vehicles) ? plan.vehicles : [];
+  const assisting = Array.isArray(plan.assisting) ? plan.assisting : [];
+  const hospitals = Array.isArray(plan.hospitals) ? plan.hospitals : [];
+
+  const agencyRows = (agencies.length ? agencies : [{}]).map((r,i) => `
+    <tr>
+      <td>${editable?`<input data-list="agencies" data-i="${i}" data-k="agency" value="${(r.agency||'').replace(/"/g,'&quot;')}">`: (r.agency||'')}</td>
+      <td>${editable?`<input data-list="agencies" data-i="${i}" data-k="unit" value="${(r.unit||'').replace(/"/g,'&quot;')}">`: (r.unit||'')}</td>
+      <td>${editable?`<input data-list="agencies" data-i="${i}" data-k="poc" value="${(r.poc||'').replace(/"/g,'&quot;')}">`: (r.poc||'')}</td>
+    </tr>`).join('');
+  const suspectRows = (suspects.length ? suspects : [{}]).map((r,i) => `
+    <tr>
+      <td>${editable?`<input data-list="suspects" data-i="${i}" data-k="name" value="${(r.name||'').replace(/"/g,'&quot;')}">`: (r.name||'')}</td>
+      <td>${editable?`<input data-list="suspects" data-i="${i}" data-k="raceSex" value="${(r.raceSex||'').replace(/"/g,'&quot;')}">`: (r.raceSex||'')}</td>
+      <td>${editable?`<input data-list="suspects" data-i="${i}" data-k="dob" value="${(r.dob||'').replace(/"/g,'&quot;')}">`: (r.dob||'')}</td>
+      <td>${editable?`<input data-list="suspects" data-i="${i}" data-k="height" value="${(r.height||'').replace(/"/g,'&quot;')}">`: (r.height||'')}</td>
+      <td>${editable?`<input data-list="suspects" data-i="${i}" data-k="weight" value="${(r.weight||'').replace(/"/g,'&quot;')}">`: (r.weight||'')}</td>
+    </tr>
+    <tr><td colspan="5">${editable?`<input data-list="suspects" data-i="${i}" data-k="history" placeholder="History / threat notes" value="${(r.history||'').replace(/"/g,'&quot;')}">`: (r.history||'')}</td></tr>`).join('');
+  const vehicleRows = (vehicles.length ? vehicles : [{}]).map((r,i) => `
+    <tr>
+      <td>${editable?`<input data-list="vehicles" data-i="${i}" data-k="year" value="${(r.year||'').replace(/"/g,'&quot;')}">`: (r.year||'')}</td>
+      <td>${editable?`<input data-list="vehicles" data-i="${i}" data-k="color" value="${(r.color||'').replace(/"/g,'&quot;')}">`: (r.color||'')}</td>
+      <td>${editable?`<input data-list="vehicles" data-i="${i}" data-k="make" value="${(r.make||'').replace(/"/g,'&quot;')}">`: (r.make||'')}</td>
+      <td>${editable?`<input data-list="vehicles" data-i="${i}" data-k="owner" value="${(r.owner||'').replace(/"/g,'&quot;')}">`: (r.owner||'')}</td>
+      <td>${editable?`<input data-list="vehicles" data-i="${i}" data-k="tag" value="${(r.tag||'').replace(/"/g,'&quot;')}">`: (r.tag||'')}</td>
+    </tr>`).join('');
+  const assistRows = (assisting.length ? assisting : [{}]).map((r,i) => `
+    <tr>
+      <td>${editable?`<input data-list="assisting" data-i="${i}" data-k="name" value="${(r.name||'').replace(/"/g,'&quot;')}">`: (r.name||'')}</td>
+      <td>${editable?`<input data-list="assisting" data-i="${i}" data-k="agency" value="${(r.agency||'').replace(/"/g,'&quot;')}">`: (r.agency||'')}</td>
+      <td>${editable?`<input data-list="assisting" data-i="${i}" data-k="assignment" value="${(r.assignment||'').replace(/"/g,'&quot;')}">`: (r.assignment||'')}</td>
+    </tr>`).join('');
+  const hospRows = (hospitals.length ? hospitals : [{},{},{}]).map((r,i) => `
+    <tr>
+      <td>${editable?`<input data-list="hospitals" data-i="${i}" data-k="name" value="${(r.name||'').replace(/"/g,'&quot;')}">`: (r.name||'')}</td>
+      <td>${editable?`<input data-list="hospitals" data-i="${i}" data-k="address" value="${(r.address||'').replace(/"/g,'&quot;')}">`: (r.address||'')}</td>
+      <td>${editable?`<input data-list="hospitals" data-i="${i}" data-k="phone" value="${(r.phone||'').replace(/"/g,'&quot;')}">`: (r.phone||'')}</td>
+    </tr>`).join('');
+
+  const rosterRows = (currentOperatorsCache||[]).map(o => {
+    const m = memberById(o.member_id);
+    if(!m) return '';
+    return `<tr><td>${m.name}</td><td>${o.role || m.team_role || ''}</td><td>${m.callsign || m.unit_number || ''}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" style="color:var(--text-dim);">Assign people on Map / Stacks.</td></tr>';
+
   $('#planFields').innerHTML = `
-    <div class="field-group">
-      <label class="field-label">Target Location Photos</label>
-      <div id="targetPhotosGrid" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;"></div>
-      ${editable ? `
-        <input type="file" id="targetPhotoInput" accept="image/*" style="display:none;">
-        <button class="btn btn-outline" id="uploadTargetPhotoBtn" type="button">+ Upload Photo</button>
-      ` : ''}
-    </div>
-    <div class="field-group">
-      <label class="field-label">Overall Command</label>
-      <select id="opCommanderSelect" ${!editable?'disabled':''}>${commanderOptions}</select>
-    </div>
-    <div class="field-group">
-      <label class="field-label">Attached teams</label>
+    <div class="plan-section"><div class="plan-section-h">Tactical Operation Plan</div><div class="plan-section-b">
+      <div class="plan-grid">
+        <div class="field-group"><label class="field-label">Date of operation</label>${planInput(editable,'opDate', op.date)}</div>
+        <div class="field-group"><label class="field-label">Type</label>${planInput(editable,'opType', op.type, 'Search Warrant')}</div>
+        <div class="field-group"><label class="field-label">Brief date / time</label>${planInput(editable,'briefDateTime', plan.briefDateTime)}</div>
+        <div class="field-group"><label class="field-label">Briefing location</label>${planInput(editable,'briefingLocation', plan.briefingLocation)}</div>
+        <div class="field-group span-2"><label class="field-label">Operation location</label>${planInput(editable,'opLocation', op.location)}</div>
+        <div class="field-group"><label class="field-label">Case agent</label>${planInput(editable,'caseAgent', plan.caseAgent)}</div>
+        <div class="field-group"><label class="field-label">Case number</label>${planInput(editable,'caseNumber', plan.caseNumber)}</div>
+        <div class="field-group span-2"><label class="field-label">Situation / Background</label>${planArea(editable,'situation', plan.situation || plan.objective)}</div>
+      </div>
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Agencies / Divisions involved</div><div class="plan-section-b">
+      <table class="plan-table"><thead><tr><th>Agency</th><th>Division / Unit</th><th>Point of contact</th></tr></thead><tbody>${agencyRows}</tbody></table>
+      ${editable?`<button type="button" class="btn btn-outline" data-add-list="agencies" style="margin-top:8px; font-size:12px;">+ Agency</button>`:''}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Location</div><div class="plan-section-b">
+      <div class="field-group"><label class="field-label">Description</label>${planInput(editable,'locationDescription', plan.locationDescription, 'Single-story, corners, outbuildings')}</div>
+      <label class="field-label">Target photos</label>
+      <div id="targetPhotosGrid" style="display:flex; gap:10px; flex-wrap:wrap; margin:8px 0;"></div>
+      ${editable ? `<input type="file" id="targetPhotoInput" accept="image/*" style="display:none;"><button class="btn btn-outline" id="uploadTargetPhotoBtn" type="button">+ Upload photo</button>` : ''}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Suspect(s)</div><div class="plan-section-b">
+      <table class="plan-table"><thead><tr><th>Name</th><th>Race / sex</th><th>DOB</th><th>Height</th><th>Weight</th></tr></thead><tbody>${suspectRows}</tbody></table>
+      ${editable?`<button type="button" class="btn btn-outline" data-add-list="suspects" style="margin-top:8px; font-size:12px;">+ Suspect</button>`:''}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Vehicle(s)</div><div class="plan-section-b">
+      <table class="plan-table"><thead><tr><th>Year</th><th>Color</th><th>Make / model</th><th>Owner</th><th>Tag</th></tr></thead><tbody>${vehicleRows}</tbody></table>
+      ${editable?`<button type="button" class="btn btn-outline" data-add-list="vehicles" style="margin-top:8px; font-size:12px;">+ Vehicle</button>`:''}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Operational personnel</div><div class="plan-section-b">
+      <table class="plan-table"><thead><tr><th>Name</th><th>Assignment</th><th>Radio / unit</th></tr></thead><tbody>${rosterRows}</tbody></table>
+      <div class="list-row-meta" style="margin-top:8px;">Lineup is built on Stacks. Radio # comes from callsign / unit on the roster.</div>
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Assisting personnel</div><div class="plan-section-b">
+      <table class="plan-table"><thead><tr><th>Name</th><th>Agency / division</th><th>Assignment</th></tr></thead><tbody>${assistRows}</tbody></table>
+      ${editable?`<button type="button" class="btn btn-outline" data-add-list="assisting" style="margin-top:8px; font-size:12px;">+ Assistant</button>`:''}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Tactical plan and execution</div><div class="plan-section-b">
+      ${planArea(editable,'execution', plan.execution || plan.approach, 'Brief, staging, convoy, perimeter, entry, turnover')}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Signal and command</div><div class="plan-section-b">
+      <div class="field-group"><label class="field-label">Overall command</label>
+        <select id="opCommanderSelect" ${!editable?'disabled':''}>${commanderOptions}</select>
+      </div>
+      ${planArea(editable,'signalCommand', plan.signalCommand || plan.comms, 'Incident command, tactical command, primary/secondary channel')}
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Obstacles and barriers</div><div class="plan-section-b">${planArea(editable,'obstacles', plan.obstacles)}</div></div>
+    <div class="plan-section"><div class="plan-section-h">Attachments and detachments</div><div class="plan-section-b">
       <div id="planUnitsBox"></div>
-    </div>
-    <div class="field-group">
-      <label class="field-label">Assets Utilized</label>
-      <div id="opAssetsChecklist" style="font-size:12.5px; color:var(--text-dim);">Loading...</div>
-    </div>
-  ` + PLAN_FIELDS.map(f => `
-    <div class="field-group"><label class="field-label">${f.label}</label>
-      ${editable
-        ? `<textarea class="field-textarea" data-plan-field="${f.key}" placeholder="Not yet filled in...">${plan[f.key]||''}</textarea>`
-        : `<div class="field-textarea" style="color:var(--text-dim);">${plan[f.key] || 'Not yet filled in'}</div>`}
-    </div>`).join('') + (op.status==='planning' && editable ? `<button class="btn btn-primary" id="completeOpBtn">Mark Operation Complete</button>` : '');
+      <div style="margin-top:10px;">${planArea(editable,'attachmentsDetachments', plan.attachmentsDetachments)}</div>
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Medical considerations</div><div class="plan-section-b">
+      <table class="plan-table"><thead><tr><th>Closest facility</th><th>Address</th><th>Phone</th></tr></thead><tbody>${hospRows}</tbody></table>
+      ${editable?`<button type="button" class="btn btn-outline" data-add-list="hospitals" style="margin:8px 0; font-size:12px;">+ Hospital</button>`:''}
+      <div class="plan-grid">
+        <div class="field-group"><label class="field-label">EMS / WEMA notified</label>${planInput(editable,'wemaNotified', plan.wemaNotified, 'Yes / station')}</div>
+        <div class="field-group"><label class="field-label">EMS staging</label>${planInput(editable,'wemaStaging', plan.wemaStaging)}</div>
+        <div class="field-group"><label class="field-label">Air unit notified</label>${planInput(editable,'lifelightNotified', plan.lifelightNotified)}</div>
+        <div class="field-group"><label class="field-label">Landing zone</label>${planInput(editable,'landingZone', plan.landingZone)}</div>
+        <div class="field-group span-2"><label class="field-label">Medical evacuation</label>${planArea(editable,'medevac', plan.medevac)}</div>
+      </div>
+    </div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Commander's intent</div><div class="plan-section-b">${planArea(editable,'commandersIntent', plan.commandersIntent)}</div></div>
+    <div class="plan-section"><div class="plan-section-h">Track / route</div><div class="plan-section-b">${planInput(editable,'trackPlan', plan.trackPlan, 'Map link')}</div></div>
+    <div class="plan-section"><div class="plan-section-h">Additional notes</div><div class="plan-section-b">${planArea(editable,'additionalNotes', plan.additionalNotes || plan.contingencies)}</div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Assets</div><div class="plan-section-b"><div id="opAssetsChecklist">Loading...</div></div></div>
+
+    <div class="plan-section"><div class="plan-section-h">Approval</div><div class="plan-section-b">
+      <div class="plan-grid">
+        <div class="field-group"><label class="field-label">Completed by</label>${planInput(editable,'completedBy', plan.completedBy)}</div>
+        <div class="field-group"><label class="field-label">Date</label>${planInput(editable,'completedDate', plan.completedDate)}</div>
+        <div class="field-group"><label class="field-label">Approved by</label>${planInput(editable,'approvedBy', plan.approvedBy)}</div>
+        <div class="field-group"><label class="field-label">Date</label>${planInput(editable,'approvedDate', plan.approvedDate)}</div>
+      </div>
+    </div></div>
+    ${op.status==='planning' && editable ? `<button class="btn btn-primary" id="completeOpBtn">Mark Operation Complete</button>` : ''}
+  `;
 
   loadTargetPhotos(op.id, editable);
   loadOpAssets(op.id, editable);
   renderDashAttachedUnits(op, editable);
 
-  if(editable){
-    $('#opCommanderSelect').addEventListener('change', async () => {
-      const val = $('#opCommanderSelect').value || null;
-      await supabaseClient.from('operations').update({ incident_commander_personnel_id: val }).eq('id', currentOpId);
-      op.incident_commander_personnel_id = val;
-    });
+  if(!editable) return;
 
-    $('#uploadTargetPhotoBtn').addEventListener('click', () => $('#targetPhotoInput').click());
-    $('#targetPhotoInput').addEventListener('change', async (e) => {
+  const cmd = $('#opCommanderSelect');
+  if(cmd) cmd.addEventListener('change', async () => {
+    const val = cmd.value || null;
+    await supabaseClient.from('operations').update({ incident_commander_personnel_id: val }).eq('id', currentOpId);
+    op.incident_commander_personnel_id = val;
+  });
+
+  const photoBtn = $('#uploadTargetPhotoBtn');
+  const photoInp = $('#targetPhotoInput');
+  if(photoBtn && photoInp){
+    photoBtn.addEventListener('click', () => photoInp.click());
+    photoInp.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if(!file) return;
       const path = `${currentProfile.agency_id}/${currentOpId}/photos/${Date.now()}-${file.name}`;
@@ -1406,21 +1541,48 @@ function renderPlan(op, editable){
       e.target.value = '';
       loadTargetPhotos(op.id, editable);
     });
-
-    $$('[data-plan-field]').forEach(ta => ta.addEventListener('blur', async () => {
-      const newPlan = { ...op.plan, [ta.dataset.planField]: ta.value };
-      await supabaseClient.from('operations').update({ plan: newPlan }).eq('id', currentOpId);
-      op.plan = newPlan;
-    }));
-    const completeBtn = $('#completeOpBtn');
-    if(completeBtn) completeBtn.addEventListener('click', async () => {
-      await supabaseClient.from('operations').update({ status:'complete', debrief:{} }).eq('id', currentOpId);
-      op.status = 'complete'; op.debrief = {};
-      renderDebrief(op, editable);
-      $$('.subtab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
-      $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
-    });
   }
+
+  const headerMap = { opDate:'date', opType:'type', opLocation:'location' };
+  $$('[data-plan-field]').forEach(el => el.addEventListener('blur', async () => {
+    const key = el.dataset.planField;
+    if(headerMap[key]){
+      await supabaseClient.from('operations').update({ [headerMap[key]]: el.value }).eq('id', currentOpId);
+      op[headerMap[key]] = el.value;
+      return;
+    }
+    op.plan = { ...(op.plan||{}), [key]: el.value };
+    await persistPlan(op);
+  }));
+
+  $$('[data-list]').forEach(el => el.addEventListener('blur', async () => {
+    const list = el.dataset.list;
+    const i = Number(el.dataset.i);
+    const k = el.dataset.k;
+    const arr = Array.isArray(op.plan && op.plan[list]) ? [...op.plan[list]] : [];
+    while(arr.length <= i) arr.push({});
+    arr[i] = { ...arr[i], [k]: el.value };
+    op.plan = { ...(op.plan||{}), [list]: arr };
+    await persistPlan(op);
+  }));
+
+  $$('[data-add-list]').forEach(btn => btn.addEventListener('click', async () => {
+    const list = btn.dataset.addList;
+    const arr = Array.isArray(op.plan && op.plan[list]) ? [...op.plan[list]] : [];
+    arr.push({});
+    op.plan = { ...(op.plan||{}), [list]: arr };
+    await persistPlan(op);
+    renderPlan(op, editable);
+  }));
+
+  const completeBtn = $('#completeOpBtn');
+  if(completeBtn) completeBtn.addEventListener('click', async () => {
+    await supabaseClient.from('operations').update({ status:'complete', debrief:{} }).eq('id', currentOpId);
+    op.status = 'complete'; op.debrief = {};
+    renderDebrief(op, editable);
+    $$('.op-rail-tab').forEach(t => t.classList.toggle('active', t.dataset.subtab==='debrief'));
+    $$('.subpanel').forEach(p => p.classList.toggle('active', p.id==='opPanel-debrief'));
+  });
 }
 
 async function loadTargetPhotos(operationId, editable){
