@@ -204,7 +204,43 @@
   .subtab.active{ background:var(--olive); color:#0c0e0c; border-color:var(--olive); }
   .subpanel{ display:none; }
   .subpanel.active{ display:block; }
-  .op-detail-grid{ display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  .op-workspace{
+    display:grid;
+    grid-template-columns: minmax(0,1.45fr) minmax(320px,0.9fr);
+    gap: 20px;
+    align-items:start;
+  }
+  .op-workspace-map, .op-workspace-plan{
+    min-width:0;
+  }
+  .op-workspace-plan{
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .op-more-tabs{ margin-top: 22px; }
+  .brief-menu{ position:relative; }
+  .brief-menu-list{
+    display:none; position:absolute; right:0; top:110%;
+    background:var(--bg-panel); border:1px solid var(--line); border-radius:6px;
+    min-width:180px; z-index:12; padding:6px;
+  }
+  .brief-menu.open .brief-menu-list{ display:block; }
+  .brief-menu-list button{
+    display:block; width:100%; text-align:left; background:none; border:none;
+    color:var(--text); padding:8px 10px; font-size:13px; cursor:pointer; border-radius:4px;
+  }
+  .brief-menu-list button:hover{ background:rgba(181,154,77,0.12); }
+  .btn-primary-action{ background:var(--olive) !important; color:#0c0e0c !important; border:none !important; }
+  .op-chip.armed, .dash-loc.btn-primary{
+    background: var(--olive) !important;
+    color: #0c0e0c !important;
+    border-color: var(--olive) !important;
+  }
+  @media (max-width: 1100px){
+    .op-workspace{ grid-template-columns: 1fr; }
+    .op-workspace-plan{ max-height: none; }
+  }
 
   /* ---- Map ---- */
   .map-canvas{
