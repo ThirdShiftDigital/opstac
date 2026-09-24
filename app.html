@@ -59,6 +59,7 @@
   .mono{ font-family:'JetBrains Mono', monospace; }
 
   /* Phone frame — centers + constrains so desktop preview reads as a phone app */
+  .phone.is-open{ display:flex; }
   .phone{
     width:100%;
     max-width: 430px;
@@ -456,7 +457,6 @@
     position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none;
   }
   .map-upload-prompt{ display:none !important; }
-  .map-change-btn{ display:none !important; }
   .map-upload-text{ font-size:12px; line-height:1.5; padding:0 20px; }
   .map-change-btn{ display:none !important;
     position:absolute; top:10px; left:10px; background: rgba(12,14,12,0.75); backdrop-filter: blur(4px);
@@ -774,6 +774,56 @@
   .ops-log-status-pill.complete-status{ background: var(--good-bg); border-color: var(--good); color: var(--good); }
   .ops-log-actions{ display:flex; gap:8px; margin-left:auto; }
 
+  @media (min-width: 900px){
+    body{ display:block; background: var(--bg); }
+    .phone.is-open{ display:flex; }
+  .phone{
+      max-width: none;
+      width: 100%;
+      min-height: 100vh;
+      box-shadow: none;
+      display: grid;
+      grid-template-columns: 220px minmax(0,1fr);
+      grid-template-rows: auto 1fr;
+    }
+    .topbar{ grid-column: 1 / -1; }
+    .content{
+      grid-column: 2;
+      grid-row: 2;
+      padding: 8px 28px 48px;
+      max-width: 1180px;
+      width: 100%;
+    }
+    .tabbar{
+      grid-column: 1;
+      grid-row: 2;
+      position: sticky;
+      top: 0;
+      align-self: stretch;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 4px;
+      border-top: none;
+      border-right: 1px solid var(--line);
+      padding: 16px 12px;
+      background: var(--bg-panel);
+    }
+    .tab-item{
+      flex: 0 0 auto;
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+    }
+    .tab-label{ font-size: 13px; }
+    .tab-dot-badge{ right: 12px; top: 12px; }
+    .stat-strip{ overflow: visible; flex-wrap: wrap; }
+    .stat-card{ min-width: 160px; }
+    .map-canvas.has-image{ height: 64vh; min-height: 420px; }
+    .new-op-sheet-inner{ max-width: 560px; margin: 0 auto; }
+    .fab{ right: 28px; bottom: 28px; }
+  }
+
 </style>
 </head>
 <body>
@@ -955,12 +1005,12 @@
             <div id="mapLive" style="position:absolute; inset:0; z-index:2;"></div>
             <div class="map-upload-prompt" id="mapUploadPrompt">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <div class="map-upload-text">Use the live map below to place pins</div>
+              <div class="map-upload-text">Upload a satellite screenshot,<br>floor plan, or scene photo</div>
             </div>
             <img id="mapBgImage" style="display:none;">
             <svg class="map-compass" id="mapCompass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--olive)"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="8"/></svg>
             <div class="map-scale" id="mapScaleLabel">TACTICAL OVERLAY — PLACEHOLDER GRID</div>
-            <div class="map-change-btn no-print" id="mapChangeBtn" style="display:none !important;">Change Image</div>
+            <div class="map-change-btn no-print" id="mapChangeBtn" style="display:none;">Change Image</div>
           </div>
           <div class="field-group" style="margin:10px 0 0;">
             <div id="checkinList"></div>
@@ -1083,11 +1133,12 @@
         </div>
       </div>
       <div class="swatch-row">
-        <div class="swatch selected" data-accent="#b59a4d" data-bright="#d4b86a" style="background:#b59a4d;" title="OpsTac Gold"></div>
-        <div class="swatch" data-accent="#b07a4a" data-bright="#d49a6a" style="background:#b07a4a;" title="Copper"></div>
-        <div class="swatch" data-accent="#6a849e" data-bright="#8eabbf" style="background:#6a849e;" title="Steel Blue"></div>
-        <div class="swatch" data-accent="#6d8f5e" data-bright="#8fb87e" style="background:#6d8f5e;" title="Tactical Green"></div>
-        <div class="swatch" data-accent="#8a9096" data-bright="#b0b6bc" style="background:#8a9096;" title="Slate"></div>
+        <div class="swatch selected" data-accent="#b59a4d" data-bright="#d4b86a" style="background:#b59a4d;" title="Brass"></div>
+        <div class="swatch" data-accent="#3f4f2a" data-bright="#6a7d3e" style="background:#3f4f2a;" title="OD Green"></div>
+        <div class="swatch" data-accent="#16324f" data-bright="#3d5a80" style="background:#16324f;" title="Navy"></div>
+        <div class="swatch" data-accent="#5c4a2e" data-bright="#8a7344" style="background:#5c4a2e;" title="Coyote"></div>
+        <div class="swatch" data-accent="#6e2424" data-bright="#9a3a3a" style="background:#6e2424;" title="Crimson"></div>
+        <div class="swatch" data-accent="#4a4d50" data-bright="#8a8e92" style="background:#4a4d50;" title="Graphite"></div>
         <div class="custom-color-wrap">
           <input type="color" class="custom-color-input" id="customColorInput" value="#b59a4d" title="Custom color">
         </div>
@@ -1387,7 +1438,7 @@
           </div>
           <input type="file" accept="image/*" id="eCoRallyMapInput" style="display:none;">
           <div class="map-canvas" id="eCoRallyMapCanvas" style="display:none;">
-            <div class="map-upload-prompt" id="eCoRallyMapPrompt">Use the live map above for location context.</div>
+            <div class="map-upload-prompt" id="eCoRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
             <img id="eCoRallyMapImg" style="display:none;">
           </div>
         </div>
@@ -1447,7 +1498,7 @@
           </div>
           <input type="file" accept="image/*" id="calloutRallyMapInput" style="display:none;">
           <div class="map-canvas" id="calloutRallyMapCanvas" style="display:none;">
-            <div class="map-upload-prompt" id="calloutRallyMapPrompt">Use the live map above for location context.</div>
+            <div class="map-upload-prompt" id="calloutRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
             <img id="calloutRallyMapImg" style="display:none;">
           </div>
         </div>
