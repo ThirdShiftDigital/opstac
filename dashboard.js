@@ -1883,6 +1883,10 @@ async function printOpReport(op, operators){
       ${p.trackPlan ? `<h3>Track / route</h3><p><a href="${p.trackPlan}">${p.trackPlan}</a></p>` : ''}
       ${block('Additional notes', p.additionalNotes || p.contingencies)}
       ${PLAN_FIELDS.map(f => p[f.key] && !['objective','approach','comms','contingencies'].includes(f.key) ? `<p><strong>${f.label}:</strong> ${p[f.key]}</p>` : '').join('')}
+      ${Array.isArray(op.ops_log) && op.ops_log.length ? `<h3>In-ops log</h3>${op.ops_log.map(e => {
+        const t = e.ts ? new Date(e.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '';
+        return `<div>${t} · <strong>${e.tag||'Note'}</strong> — ${e.text||''}</div>`;
+      }).join('')}` : ''}
       ${op.status==='complete' ? `<h3>Debrief</h3>${DEBRIEF_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.debrief||{})[f.key] || '—'}</p>`).join('')}` : ''}
     </body></html>
   `);
@@ -1988,6 +1992,10 @@ async function exportOpPresentation(op, operators){
     addPacketSlide('Track / route', pk.trackPlan);
     addPacketSlide('Additional notes', pk.additionalNotes || pk.contingencies);
     addPacketSlide('Prepared / approved', [pk.completedBy && ('Prepared by '+pk.completedBy+' '+ (pk.completedDate||'')), pk.approvedBy && ('Approved by '+pk.approvedBy+' '+(pk.approvedDate||''))].filter(Boolean).join('\n'));
+    addListSlide('In-ops log', (op.ops_log||[]).map(e => {
+      const t = e.ts ? new Date(e.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+      return `${t}  ${e.tag||'Note'} — ${e.text||''}`;
+    }));
     PLAN_FIELDS.forEach(f => {
       if(['objective','approach','comms','contingencies'].includes(f.key)) return;
       addPacketSlide(f.label, pk[f.key]);
@@ -2895,28 +2903,82 @@ function rebuildDashMarkers(op){
   });
 }
 
+const DASH_QUICK_LOG = [
+  { label: 'On Scene', tag: 'Movement', text: 'Team on scene' },
+  { label: 'Perimeter Set', tag: 'Movement', text: 'Perimeter set' },
+  { label: 'Announcements', tag: 'Command', text: 'PA announcements initiated' },
+  { label: 'Entry Made', tag: 'Entry / Breach', text: 'Entry made' },
+  { label: 'Breach', tag: 'Entry / Breach', text: 'Breach initiated' },
+  { label: 'Suspect Contact', tag: 'Suspect Contact', text: 'Suspect contact' },
+  { label: 'Suspect Custody', tag: 'Suspect Custody', text: 'Suspect in custody' },
+  { label: 'Shots Fired', tag: 'Shots Fired', text: 'Shots fired' },
+  { label: 'Use of Force', tag: 'Use of Force', text: 'Use of force' },
+  { label: 'Injury – Suspect', tag: 'Injury', text: 'Suspect injury' },
+  { label: 'Injury – Team', tag: 'Injury', text: 'Team member injury' },
+  { label: 'Medical', tag: 'Medical', text: 'Medical activated' },
+  { label: 'Flash Bang', tag: 'Flash Bang', text: 'Flash bang deployed' },
+  { label: 'Gas', tag: 'Gas', text: 'Gas deployed' },
+  { label: 'Throw Phone', tag: 'Throw Phone', text: 'Throw phone deployed' },
+  { label: 'Interior Drone', tag: 'Drone', text: 'Interior drone made entry' },
+  { label: 'Drone Down', tag: 'Drone', text: 'Interior drone went down' },
+  { label: 'All Clear', tag: 'Note', text: 'All clear / scene secure' },
+];
+
+async function saveDashLog(next){
+  currentOpCache.ops_log = next;
+  await supabaseClient.from('operations').update({ ops_log: next }).eq('id', currentOpId);
+}
+
+async function addDashLog(tag, text){
+  const extra = prompt('Optional note (leave blank to stamp as-is)', '');
+  if(extra === null) return;
+  const line = extra.trim() ? `${text} — ${extra.trim()}` : text;
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(16).slice(2),
+    tag, text: line, ts: new Date().toISOString(),
+    author: (currentProfile && currentProfile.full_name) || 'Commander'
+  };
+  await saveDashLog([...(currentOpCache.ops_log||[]), entry]);
+  renderDashOpsLog(currentOpCache);
+}
+
 function renderDashOpsLog(op){
   const el = document.getElementById('dashOpsLog');
   if(!el) return;
   const log = op.ops_log || [];
+  const chips = DASH_QUICK_LOG.map((q,i) =>
+    `<button type="button" class="btn btn-outline dash-quick-log" data-qi="${i}" style="font-size:12px; padding:6px 10px;">${q.label}</button>`
+  ).join('');
   el.innerHTML = `
+    <div class="list-row-meta" style="margin-bottom:8px;">Tap an event to stamp the log. Optional note after. Type only if none of these fit.</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">${chips}</div>
     <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <input type="text" class="field-input" id="dashLogInput" placeholder="Add a log note...">
+      <input type="text" class="field-input" id="dashLogInput" placeholder="Custom note only if needed" autocomplete="off">
       <button type="button" class="btn btn-primary" id="dashLogAdd">Add</button>
     </div>
-    ${log.length ? log.slice().reverse().map(e => `<div class="list-row"><div class="list-row-title">${e.tag||'Note'}</div><div class="list-row-meta">${e.text||''}</div></div>`).join('') : '<div class="empty-state">No log entries yet.</div>'}
+    ${log.length ? log.slice().reverse().map(e => {
+      const t = e.ts ? new Date(e.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '';
+      return `<div class="list-row" style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+        <div><div class="list-row-title">${e.tag||'Note'} · ${t}</div><div class="list-row-meta">${e.text||''}${e.author?` · ${e.author}`:''}</div></div>
+        <button type="button" class="btn btn-ghost dash-log-del" data-id="${e.id}" style="font-size:11px;">Remove</button>
+      </div>`;
+    }).join('') : '<div class="empty-state">No log entries yet.</div>'}
   `;
-  const add = async () => {
+  $$('.dash-quick-log').forEach(btn => btn.addEventListener('click', () => {
+    const q = DASH_QUICK_LOG[Number(btn.dataset.qi)];
+    if(q) addDashLog(q.tag, q.text);
+  }));
+  document.getElementById('dashLogAdd').onclick = async () => {
     const input = document.getElementById('dashLogInput');
     const text = (input && input.value || '').trim();
     if(!text) return;
-    const entry = { id: Date.now().toString(36), tag:'Note', text, ts: new Date().toISOString() };
-    const next = [...(currentOpCache.ops_log||[]), entry];
-    currentOpCache.ops_log = next;
-    await supabaseClient.from('operations').update({ ops_log: next }).eq('id', currentOpId);
-    renderDashOpsLog(currentOpCache);
+    await addDashLog('Note', text);
   };
-  document.getElementById('dashLogAdd').onclick = add;
+  $$('.dash-log-del').forEach(btn => btn.addEventListener('click', async () => {
+    const next = (currentOpCache.ops_log||[]).filter(e => String(e.id) !== String(btn.dataset.id));
+    await saveDashLog(next);
+    renderDashOpsLog(currentOpCache);
+  }));
 }
 
 
