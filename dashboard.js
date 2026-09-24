@@ -250,7 +250,7 @@ function applyTheme(accent, bright){
 const PAGE_META = {
   overview: { title:'Command Overview', sub:'Real-time status across the team' },
   roster: { title:'Roster', sub:'Full personnel roster' },
-  operations: { title:'Operations', sub:'Plan, run, and debrief activations' },
+  operations: { title:'Operations', sub:'Callouts, warrants, plans, and debriefs' },
   equipment: { title:'Equipment', sub:'Assigned gear and checkout status' },
   certs: { title:'Certifications', sub:'Certification status across the team' },
   training: { title:'Training', sub:'Logged sessions and hours' },
@@ -1008,10 +1008,30 @@ $('#newTrainingBtn').addEventListener('click', async () => {
 // ---------- Operations ----------
 async function loadOperations(){
   $('#newOpBtn').style.display = canEditOps() ? 'inline-block' : 'none';
+  const opsCalloutBtn = $('#opsPageCalloutBtn');
+  if(opsCalloutBtn){
+    opsCalloutBtn.style.display = canManageCallouts() ? 'inline-block' : 'none';
+    opsCalloutBtn.onclick = () => openNewCalloutModal(null);
+  }
+  const coWrap = $('#opsCalloutsWrap');
+  if(coWrap){
+    const { data: cos } = await supabaseClient.from('callouts').select('id, type, mode, location, date, active, operations(name)').order('created_at', { ascending:false }).limit(8);
+    if(!cos || !cos.length) coWrap.innerHTML = `<div class="list-row-title" style="margin-bottom:8px;">Callouts</div><div class="panel-empty">No callouts yet. Use + Callout.</div>`;
+    else coWrap.innerHTML = `<div class="list-row-title" style="margin-bottom:8px;">Callouts</div>` + cos.map(c => `
+      <div class="list-row" data-jump-callouts="1">
+        <span class="pill ${c.mode==='deploy'?'bad':(c.active?'warn':'good')}"><span class="pill-dot"></span>${c.active?(c.mode==='deploy'?'Deploy':'Standby'):'Closed'}</span>
+        <div class="list-row-title">${c.type||'Callout'}</div>
+        <div class="list-row-meta">${c.date||''} ${c.location?'· '+c.location:''} ${c.operations&&c.operations.name?'· '+c.operations.name:''}</div>
+      </div>`).join('');
+    $$('#opsCalloutsWrap [data-jump-callouts]').forEach(row => row.addEventListener('click', () => {
+      const nav = [...document.querySelectorAll('.nav-item')].find(n => n.dataset.section==='callouts');
+      if(nav) nav.click();
+    }));
+  }
   $('#opsListWrap').innerHTML = `<div class="loading-state">Loading...</div>`;
   const { data: ops } = await supabaseClient.from('operations').select('*').order('date', { ascending:false });
-  if(!ops || ops.length === 0){ $('#opsListWrap').innerHTML = `<div class="panel-empty">No operations logged yet.</div>`; return; }
-  $('#opsListWrap').innerHTML = ops.map(o => {
+  if(!ops || ops.length === 0){ $('#opsListWrap').innerHTML = `<div class="list-row-title" style="margin-bottom:8px;">Operations</div><div class="panel-empty">No operations logged yet.</div>`; return; }
+  $('#opsListWrap').innerHTML = `<div class="list-row-title" style="margin-bottom:8px;">Operations</div>` + ops.map(o => {
     const statusCls = o.status === 'complete' ? 'good' : 'warn';
     const statusLabel = o.status === 'complete' ? 'Complete' : 'Planning';
     return `<div class="list-row" data-op-id="${o.id}">
@@ -2111,7 +2131,81 @@ async function loadCallouts(){
   }
 }
 
+function parseCalloutGeo(callout){
+  const out = { target:null, rally:null };
+  if(callout && callout.location_lat != null && callout.location_lng != null) out.target = { lat:Number(callout.location_lat), lng:Number(callout.location_lng) };
+  if(callout && callout.rally_lat != null && callout.rally_lng != null) out.rally = { lat:Number(callout.rally_lat), lng:Number(callout.rally_lng) };
+  const live = String(callout && callout.rally_map_image_url || '');
+  if(!out.target && live.indexOf('live:') === 0){
+    const p = live.slice(5).split(',');
+    if(p.length>=2) out.target = { lat:Number(p[0]), lng:Number(p[1]) };
+  }
+  const rr = String(callout && callout.rally_map_ratio || '');
+  if(!out.rally && rr.indexOf('rally:') === 0){
+    const p = rr.slice(6).split(',');
+    if(p.length>=2) out.rally = { lat:Number(p[0]), lng:Number(p[1]) };
+  }
+  return out;
+}
+function encodeCalloutGeo(geo){
+  return {
+    rally_map_image_url: geo.target ? `live:${geo.target.lat},${geo.target.lng}` : null,
+    rally_map_ratio: geo.rally ? `rally:${geo.rally.lat},${geo.rally.lng}` : null,
+    location_lat: geo.target ? geo.target.lat : null,
+    location_lng: geo.target ? geo.target.lng : null,
+    rally_lat: geo.rally ? geo.rally.lat : null,
+    rally_lng: geo.rally ? geo.rally.lng : null,
+  };
+}
+
+function mountCalloutLiveMap(elId, geo, locInputId, rallyInputId){
+  const el = document.getElementById(elId);
+  if(!el || !window.L) return geo;
+  if(el._leaflet){ try { el._leaflet.remove(); } catch(e){} }
+  const map = L.map(el, { zoomControl:true, attributionControl:false, scrollWheelZoom:false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(map);
+  map.setView([36.208,-86.291], 16);
+  el._leaflet = map;
+  const layer = L.layerGroup().addTo(map);
+  let mode = 'target';
+  const draw = () => {
+    layer.clearLayers();
+    if(geo.target) L.marker([geo.target.lat, geo.target.lng], { icon: liveIcon('TGT', '#c45c5c', 0, 'target') }).addTo(layer);
+    if(geo.rally) L.marker([geo.rally.lat, geo.rally.lng], { icon: liveIcon('RALLY', '#b59a4d', 0, 'rally') }).addTo(layer);
+  };
+  draw();
+  if(geo.target) map.setView([geo.target.lat, geo.target.lng], 17);
+  else if(geo.rally) map.setView([geo.rally.lat, geo.rally.lng], 17);
+  map.on('click', (e) => {
+    if(mode === 'rally') geo.rally = { lat:e.latlng.lat, lng:e.latlng.lng };
+    else geo.target = { lat:e.latlng.lat, lng:e.latlng.lng };
+    draw();
+  });
+  const bindJump = (id, which) => {
+    const inp = document.getElementById(id);
+    if(!inp) return;
+    const go = async () => {
+      const hit = await geocodeAddress(inp.value);
+      if(!hit) return;
+      map.setView([hit.lat, hit.lng], 18);
+      if(which === 'rally') geo.rally = hit; else geo.target = hit;
+      draw();
+    };
+    inp.addEventListener('change', go);
+    inp.addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); go(); } });
+  };
+  bindJump(locInputId, 'target');
+  bindJump(rallyInputId, 'rally');
+  const tgtBtn = document.getElementById(elId + 'Tgt');
+  const rlyBtn = document.getElementById(elId + 'Rly');
+  if(tgtBtn) tgtBtn.onclick = () => { mode = 'target'; tgtBtn.classList.add('btn-primary'); if(rlyBtn) rlyBtn.classList.remove('btn-primary'); };
+  if(rlyBtn) rlyBtn.onclick = () => { mode = 'rally'; rlyBtn.classList.add('btn-primary'); if(tgtBtn) tgtBtn.classList.remove('btn-primary'); };
+  setTimeout(() => map.invalidateSize(), 200);
+  return geo;
+}
+
 function openEditCalloutModal(callout){
+  const geo = parseCalloutGeo(callout);
   openModal('Edit Callout', `
     <div class="field-group"><label class="field-label">Type / Reason</label><input type="text" id="eCoType" value="${callout.type||''}"></div>
     <div class="field-group"><label class="field-label">Mode</label>
@@ -2123,12 +2217,12 @@ function openEditCalloutModal(callout){
     <div class="field-group"><label class="field-label">Location</label><input type="text" id="eCoLocation" value="${callout.location||''}"></div>
     <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="eCoRally" value="${callout.rally_location||''}"></div>
     <div class="field-group">
-      <label class="field-label">Rally Point Map (optional)</label>
-      <input type="file" accept="image/*" id="eCoRallyMapInput" style="display:none;">
-      <div class="map-canvas ${callout.rally_map_image_url?'has-image':''}" id="eCoRallyMapCanvas" style="${callout.rally_map_image_url && callout.rally_map_ratio ? `aspect-ratio:${callout.rally_map_ratio};`:''}">
-        <div class="map-upload-prompt" id="eCoRallyMapPrompt" style="${callout.rally_map_image_url?'display:none;':''}">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
-        <img id="eCoRallyMapImg" style="${callout.rally_map_image_url?'display:block;':'display:none;'}">
+      <label class="field-label">Live map</label>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button type="button" class="btn btn-outline btn-primary" id="eCoLiveMapTgt" style="font-size:12px;">Place target</button>
+        <button type="button" class="btn btn-outline" id="eCoLiveMapRly" style="font-size:12px;">Place rally</button>
       </div>
+      <div id="eCoLiveMap" style="height:240px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
     </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="eCoMessage">${callout.message||''}</textarea></div>
     <div class="settings-row" style="padding:10px 0;">
@@ -2144,61 +2238,7 @@ function openEditCalloutModal(callout){
   `);
   let eCoMode = callout.mode;
   let eCoActiveVal = !!callout.active;
-  let rallyMapPath = callout.rally_map_image_url || null;
-  let rallyMapRatio = callout.rally_map_ratio || null;
-  let rallyPinX = callout.rally_pin_x != null ? callout.rally_pin_x : null;
-  let rallyPinY = callout.rally_pin_y != null ? callout.rally_pin_y : null;
-
-  if(rallyMapPath){
-    supabaseClient.storage.from('operation-maps').createSignedUrl(rallyMapPath, 3600).then(({data, error}) => {
-      if(error){ console.error('Edit callout rally map: could not get signed URL', { path: rallyMapPath, error }); return; }
-      $('#eCoRallyMapImg').src = data.signedUrl;
-    });
-    if(rallyPinX != null && rallyPinY != null){
-      const pin = document.createElement('div');
-      pin.className = 'map-pin rally-pin-marker';
-      pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
-      pin.textContent = 'R';
-      $('#eCoRallyMapCanvas').appendChild(pin);
-    }
-  }
-  $('#eCoRallyMapPrompt').addEventListener('click', () => $('#eCoRallyMapInput').click());
-  $('#eCoRallyMapInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const path = `${currentProfile.agency_id}/callouts/${callout.id}/${Date.now()}-${file.name}`;
-    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-    if(error){ alert('Upload failed: ' + error.message); return; }
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      img.onload = () => {
-        rallyMapPath = path;
-        rallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-        $('#eCoRallyMapCanvas').classList.add('has-image');
-        $('#eCoRallyMapCanvas').style.aspectRatio = rallyMapRatio;
-        $('#eCoRallyMapImg').src = ev.target.result;
-        $('#eCoRallyMapImg').style.display = 'block';
-        $('#eCoRallyMapPrompt').style.display = 'none';
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-  $('#eCoRallyMapCanvas').addEventListener('click', (e) => {
-    if(!rallyMapPath || e.target.closest('#eCoRallyMapPrompt')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-    rallyPinX = Math.max(3, Math.min(97, x));
-    rallyPinY = Math.max(3, Math.min(97, y));
-    $$('#eCoRallyMapCanvas .rally-pin-marker').forEach(p => p.remove());
-    const pin = document.createElement('div');
-    pin.className = 'map-pin rally-pin-marker';
-    pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
-    pin.textContent = 'R';
-    $('#eCoRallyMapCanvas').appendChild(pin);
-  });
+  setTimeout(() => mountCalloutLiveMap('eCoLiveMap', geo, 'eCoLocation', 'eCoRally'), 80);
 
   $$('#eCoModeRow .choice-btn').forEach(btn => btn.addEventListener('click', () => {
     eCoMode = btn.dataset.mode;
@@ -2224,8 +2264,7 @@ function openEditCalloutModal(callout){
       message: $('#eCoMessage').value.trim(),
       active: eCoActiveVal,
       outcome: $('#eCoOutcome').value.trim() || null,
-      rally_map_image_url: rallyMapPath, rally_map_ratio: rallyMapRatio,
-      rally_pin_x: rallyPinX, rally_pin_y: rallyPinY,
+      ...encodeCalloutGeo(geo),
     }).eq('id', callout.id);
     closeModal();
     loadCallouts();
@@ -2239,8 +2278,7 @@ async function openNewCalloutModal(lockedOp){
   let mode = null;
   let linkedOperationId = lockedOp ? lockedOp.id : '';
   const selected = new Set(allPersonnel.filter(p => p.on_call).map(p => p.id));
-  let rallyMapPath = null, rallyMapRatio = null, rallyPinX = null, rallyPinY = null;
-  const rallyMapId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
+  const geo = { target:null, rally:null };
 
   let opLinkHtml;
   if(lockedOp){
@@ -2271,15 +2309,16 @@ async function openNewCalloutModal(lockedOp){
         <div class="choice-btn" data-mode="deploy">Deploy</div>
       </div>
     </div>
-    <div class="field-group"><label class="field-label">Location</label><input type="text" id="mCoLocation"></div>
-    <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="mCoRally"></div>
+    <div class="field-group"><label class="field-label">Location</label><input type="text" id="mCoLocation" placeholder="Target address"></div>
+    <div class="field-group"><label class="field-label">Rally Location</label><input type="text" id="mCoRally" placeholder="Staging / rally address"></div>
     <div class="field-group">
-      <label class="field-label">Rally Point Map (optional)</label>
-      <input type="file" accept="image/*" id="mCoRallyMapInput" style="display:none;">
-      <div class="map-canvas" id="mCoRallyMapCanvas">
-        <div class="map-upload-prompt" id="mCoRallyMapPrompt">Tap to upload a map or photo, then tap it again to mark the rally point.</div>
-        <img id="mCoRallyMapImg" style="display:none;">
+      <label class="field-label">Live map</label>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button type="button" class="btn btn-outline btn-primary" id="mCoLiveMapTgt" style="font-size:12px;">Place target</button>
+        <button type="button" class="btn btn-outline" id="mCoLiveMapRly" style="font-size:12px;">Place rally</button>
       </div>
+      <div id="mCoLiveMap" style="height:240px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
+      <div class="list-row-meta" style="margin-top:6px;">Type an address and press Enter, or tap the map. Target = red, rally = gold.</div>
     </div>
     <div class="field-group"><label class="field-label">Message</label><textarea class="field-textarea" id="mCoMessage">SRT ACTIVATION. Report to staging ASAP. Await further instructions.</textarea></div>
     <div class="field-group"><label class="field-label">Select Team</label><div id="mCoRoster"></div></div>
@@ -2305,43 +2344,7 @@ async function openNewCalloutModal(lockedOp){
     $$('#mCoModeRow .choice-btn').forEach(b => b.classList.toggle('selected', b===btn));
   }));
 
-  $('#mCoRallyMapPrompt').addEventListener('click', () => $('#mCoRallyMapInput').click());
-  $('#mCoRallyMapInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const path = `${currentProfile.agency_id}/callouts/${rallyMapId}/${Date.now()}-${file.name}`;
-    const { error } = await supabaseClient.storage.from('operation-maps').upload(path, file, { upsert:true });
-    if(error){ alert('Upload failed: ' + error.message); return; }
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      img.onload = () => {
-        rallyMapPath = path;
-        rallyMapRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
-        $('#mCoRallyMapCanvas').classList.add('has-image');
-        $('#mCoRallyMapCanvas').style.aspectRatio = rallyMapRatio;
-        $('#mCoRallyMapImg').src = ev.target.result;
-        $('#mCoRallyMapImg').style.display = 'block';
-        $('#mCoRallyMapPrompt').style.display = 'none';
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-  $('#mCoRallyMapCanvas').addEventListener('click', (e) => {
-    if(!rallyMapPath || e.target.closest('#mCoRallyMapPrompt')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
-    rallyPinX = Math.max(3, Math.min(97, x));
-    rallyPinY = Math.max(3, Math.min(97, y));
-    $$('.rally-pin-marker').forEach(p => p.remove());
-    const pin = document.createElement('div');
-    pin.className = 'map-pin rally-pin-marker';
-    pin.style.left = rallyPinX + '%'; pin.style.top = rallyPinY + '%';
-    pin.textContent = 'R';
-    $('#mCoRallyMapCanvas').appendChild(pin);
-  });
+  setTimeout(() => mountCalloutLiveMap('mCoLiveMap', geo, 'mCoLocation', 'mCoRally'), 80);
   $('#mCancel').addEventListener('click', closeModal);
   $('#mSave').addEventListener('click', async () => {
     if(selected.size === 0){ alert('Select at least one team member.'); return; }
@@ -2363,16 +2366,21 @@ async function openNewCalloutModal(lockedOp){
       }
     }
 
-    const { data: callout } = await supabaseClient.from('callouts').insert({
+    const encoded = encodeCalloutGeo(geo);
+    let payload = {
       agency_id: currentProfile.agency_id,
       type: $('#mCoType').value.trim() || 'SRT Activation',
       location: $('#mCoLocation').value.trim() || null,
       rally_location: $('#mCoRally').value.trim() || null,
       mode, method: 'logged', message: $('#mCoMessage').value.trim(), active: true,
       operation_id: opId || null,
-      rally_map_image_url: rallyMapPath, rally_map_ratio: rallyMapRatio,
-      rally_pin_x: rallyPinX, rally_pin_y: rallyPinY,
-    }).select().single();
+      ...encoded,
+    };
+    let { data: callout, error: coErr } = await supabaseClient.from('callouts').insert(payload).select().single();
+    if(coErr){
+      delete payload.location_lat; delete payload.location_lng; delete payload.rally_lat; delete payload.rally_lng;
+      ({ data: callout } = await supabaseClient.from('callouts').insert(payload).select().single());
+    }
     if(callout){
       await supabaseClient.from('callout_recipients').insert([...selected].map(memberId => ({ callout_id: callout.id, member_id: memberId, ack:'pending' })));
     }
@@ -2458,11 +2466,14 @@ async function loadSettings(){
     <div class="settings-group">
       <div class="settings-group-title">Appearance</div>
       <div class="swatch-row">
-        <div class="swatch ${settings.accent_color==='#a89968'?'selected':''}" data-accent="#a89968" data-bright="#c7b482" style="background:#a89968;"></div>
-        <div class="swatch ${settings.accent_color==='#b8564a'?'selected':''}" data-accent="#b8564a" data-bright="#d97a6c" style="background:#b8564a;"></div>
-        <div class="swatch ${settings.accent_color==='#5a7fa6'?'selected':''}" data-accent="#5a7fa6" data-bright="#7ea3c9" style="background:#5a7fa6;"></div>
-        <div class="swatch ${settings.accent_color==='#6b9a5f'?'selected':''}" data-accent="#6b9a5f" data-bright="#8fbf82" style="background:#6b9a5f;"></div>
+        <div class="swatch ${!settings.accent_color || settings.accent_color==='#b59a4d' || settings.accent_color==='#a89968'?'selected':''}" data-accent="#b59a4d" data-bright="#d4b86a" style="background:#b59a4d;" title="Brass"></div>
+        <div class="swatch ${settings.accent_color==='#3f4f2a'?'selected':''}" data-accent="#3f4f2a" data-bright="#6a7d3e" style="background:#3f4f2a;" title="OD Green"></div>
+        <div class="swatch ${settings.accent_color==='#16324f'?'selected':''}" data-accent="#16324f" data-bright="#3d5a80" style="background:#16324f;" title="Navy"></div>
+        <div class="swatch ${settings.accent_color==='#5c4a2e'?'selected':''}" data-accent="#5c4a2e" data-bright="#8a7344" style="background:#5c4a2e;" title="Coyote"></div>
+        <div class="swatch ${settings.accent_color==='#6e2424'?'selected':''}" data-accent="#6e2424" data-bright="#9a3a3a" style="background:#6e2424;" title="Crimson"></div>
+        <div class="swatch ${settings.accent_color==='#4a4d50'?'selected':''}" data-accent="#4a4d50" data-bright="#8a8e92" style="background:#4a4d50;" title="Graphite"></div>
       </div>
+      <div class="list-row-meta" style="margin-top:8px;">Brass · OD Green · Navy · Coyote · Crimson · Graphite</div>
     </div>
   `;
 
