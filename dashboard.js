@@ -1115,6 +1115,11 @@ function renderOpDetail(op, operators){
         </label>
         <button type="button" class="btn btn-danger-outline" id="dashRemovePin" style="font-size:12px;">Remove selected</button>
       </div>
+      <div class="dash-map-tools">
+        <input type="url" class="field-input" id="dashTrackPlan" placeholder="Track plan URL (MapQuest, Google Maps, convoy route)" style="flex:1; min-width:260px;" value="${((op.plan&&op.plan.trackPlan)||'').replace(/"/g,'&quot;')}">
+        <button type="button" class="btn btn-outline" id="dashTrackOpen">Open track</button>
+        <button type="button" class="btn btn-outline" id="dashTrackSave">Save on plan</button>
+      </div>
       <div id="dashLiveMap" style="height:70vh; min-height:520px; width:100%; background:#0b100d; border:1px solid var(--line); border-radius:8px;"></div>
       <div class="op-palette" id="opPalette"></div>
       
@@ -1239,6 +1244,9 @@ async function renderOpCallouts(opId){
 }
 
 const DASH_LOCS = [
+  { type:'target', label:'Target' },
+  { type:'breach', label:'Breach' },
+  { type:'entry', label:'Entry' },
   { type:'command', label:'Command' },
   { type:'ems', label:'EMS' },
   { type:'lz', label:'LZ' },
@@ -1246,6 +1254,26 @@ const DASH_LOCS = [
   { type:'rally', label:'Rally' },
   { type:'staging', label:'Staging' },
 ];
+const VEHICLE_COLORS = {
+  black:'#3a3a3a', white:'#e8e6df', silver:'#9aa3a8',
+  red:'#c45c5c', blue:'#4a7ab5', gold:'#b59a4d', marked:'#4d7a45'
+};
+function askMarkerMeta(type, defaultLabel){
+  if(type === 'vehicle'){
+    const label = prompt('Vehicle label (Bearcat, Black F150, Marked unit)', defaultLabel || 'Vehicle');
+    if(label === null) return null;
+    const colorName = prompt('Color: black, white, silver, red, blue, gold, marked', 'black');
+    if(colorName === null) return null;
+    const key = String(colorName||'black').toLowerCase().trim();
+    return { label: (label||'Vehicle').slice(0,18), color: VEHICLE_COLORS[key] || key || VEHICLE_COLORS.black, colorName: key };
+  }
+  if(type === 'target' || type === 'breach' || type === 'entry'){
+    const label = prompt('Label (optional)', defaultLabel || type);
+    if(label === null) return null;
+    return { label: (label || defaultLabel || type).slice(0,16) };
+  }
+  return { label: defaultLabel || type };
+}
 function operatorUnitLabel(person){
   if(!person) return '?';
   const raw = String(person.callsign || person.unit_number || '').trim();
@@ -1414,11 +1442,30 @@ function renderPlan(op, editable){
       <td>${editable?`<input data-list="hospitals" data-i="${i}" data-k="phone" value="${(r.phone||'').replace(/"/g,'&quot;')}">`: (r.phone||'')}</td>
     </tr>`).join('');
 
-  const rosterRows = (currentOperatorsCache||[]).map(o => {
+  const seenPeople = new Set();
+  const peopleRows = [];
+  (currentOperatorsCache||[]).forEach(o => {
     const m = memberById(o.member_id);
-    if(!m) return '';
-    return `<tr><td>${m.name}</td><td>${o.role || m.team_role || ''}</td><td>${m.callsign || m.unit_number || ''}</td></tr>`;
-  }).join('') || '<tr><td colspan="3" style="color:var(--text-dim);">Assign people on Map / Stacks.</td></tr>';
+    if(!m || seenPeople.has(m.id)) return;
+    seenPeople.add(m.id);
+    peopleRows.push({ id:m.id, name:m.name, assignment: o.role || m.team_role || '', radio: m.callsign || m.unit_number || '', from:'op' });
+  });
+  (op.map_stacks||[]).forEach(st => {
+    (st.members||[]).forEach((mem, idx) => {
+      const m = memberById(mem.member_id);
+      if(!m || seenPeople.has(m.id)) return;
+      seenPeople.add(m.id);
+      peopleRows.push({ id:m.id, name:m.name, assignment: `${st.name||'Stack'} ${idx+1}`, radio: m.callsign || m.unit_number || '', from:'stack' });
+    });
+  });
+  const rosterRows = peopleRows.length ? peopleRows.map(r => `
+    <tr>
+      <td>${r.name}</td>
+      <td>${editable
+        ? `<input data-op-role="${r.id}" value="${String(r.assignment||'').replace(/"/g,'&quot;')}" placeholder="Entry / Perimeter / Medic">`
+        : (r.assignment||'')}</td>
+      <td>${r.radio||''}</td>
+    </tr>`).join('') : '<tr><td colspan="3" style="color:var(--text-dim);">Place operators on the Map or add them to a Stack. This list is the roster — not a second sheet to type.</td></tr>';
 
   $('#planFields').innerHTML = `
     <div class="plan-section"><div class="plan-section-h">Tactical Operation Plan</div><div class="plan-section-b">
@@ -1457,11 +1504,12 @@ function renderPlan(op, editable){
     </div></div>
 
     <div class="plan-section"><div class="plan-section-h">Operational personnel</div><div class="plan-section-b">
-      <table class="plan-table"><thead><tr><th>Name</th><th>Assignment</th><th>Radio / unit</th></tr></thead><tbody>${rosterRows}</tbody></table>
-      <div class="list-row-meta" style="margin-top:8px;">Lineup is built on Stacks. Radio # comes from callsign / unit on the roster.</div>
+      <table class="plan-table"><thead><tr><th>Name</th><th>Assignment this op</th><th>Radio / unit</th></tr></thead><tbody>${rosterRows}</tbody></table>
+      <div class="list-row-meta" style="margin-top:8px;">Same people as operators on Map and Stacks. Assignment here is for this warrant only. Radio # is their roster callsign.</div>
     </div></div>
 
     <div class="plan-section"><div class="plan-section-h">Assisting personnel</div><div class="plan-section-b">
+      <div class="list-row-meta" style="margin-bottom:8px;">Outside the agency roster — MJPD, THP, etc.</div>
       <table class="plan-table"><thead><tr><th>Name</th><th>Agency / division</th><th>Assignment</th></tr></thead><tbody>${assistRows}</tbody></table>
       ${editable?`<button type="button" class="btn btn-outline" data-add-list="assisting" style="margin-top:8px; font-size:12px;">+ Assistant</button>`:''}
     </div></div>
@@ -1503,9 +1551,23 @@ function renderPlan(op, editable){
 
     <div class="plan-section"><div class="plan-section-h">Approval</div><div class="plan-section-b">
       <div class="plan-grid">
-        <div class="field-group"><label class="field-label">Completed by</label>${planInput(editable,'completedBy', plan.completedBy)}</div>
+        <div class="field-group"><label class="field-label">Prepared by</label>
+          <select id="planPreparedBy" ${!editable?'disabled':''}>
+            <option value="">Select commander / team leader</option>
+            ${allPersonnel.filter(p => p.permission==='commander' || p.permission==='team-leader').map(p =>
+              `<option value="${p.id}" ${plan.completedById===p.id || plan.completedBy===p.name ? 'selected':''}>${p.name}${p.rank?` · ${p.rank}`:''} · ${p.permission==='commander'?'Commander':'Team Leader'}</option>`
+            ).join('')}
+          </select>
+        </div>
         <div class="field-group"><label class="field-label">Date</label>${planInput(editable,'completedDate', plan.completedDate)}</div>
-        <div class="field-group"><label class="field-label">Approved by</label>${planInput(editable,'approvedBy', plan.approvedBy)}</div>
+        <div class="field-group"><label class="field-label">Approved by</label>
+          <select id="planApprovedBy" ${!editable?'disabled':''}>
+            <option value="">Select commander / team leader</option>
+            ${allPersonnel.filter(p => p.permission==='commander' || p.permission==='team-leader').map(p =>
+              `<option value="${p.id}" ${plan.approvedById===p.id || plan.approvedBy===p.name ? 'selected':''}>${p.name}${p.rank?` · ${p.rank}`:''} · ${p.permission==='commander'?'Commander':'Team Leader'}</option>`
+            ).join('')}
+          </select>
+        </div>
         <div class="field-group"><label class="field-label">Date</label>${planInput(editable,'approvedDate', plan.approvedDate)}</div>
       </div>
     </div></div>
@@ -1524,6 +1586,18 @@ function renderPlan(op, editable){
     await supabaseClient.from('operations').update({ incident_commander_personnel_id: val }).eq('id', currentOpId);
     op.incident_commander_personnel_id = val;
   });
+
+  async function saveSignoff(selectId, idKey, nameKey){
+    const sel = document.getElementById(selectId);
+    if(!sel) return;
+    const person = memberById(sel.value);
+    op.plan = { ...(op.plan||{}), [idKey]: sel.value || null, [nameKey]: person ? person.name : '' };
+    await persistPlan(op);
+  }
+  const prep = document.getElementById('planPreparedBy');
+  const appr = document.getElementById('planApprovedBy');
+  if(prep) prep.addEventListener('change', () => saveSignoff('planPreparedBy', 'completedById', 'completedBy'));
+  if(appr) appr.addEventListener('change', () => saveSignoff('planApprovedBy', 'approvedById', 'approvedBy'));
 
   const photoBtn = $('#uploadTargetPhotoBtn');
   const photoInp = $('#targetPhotoInput');
@@ -1573,6 +1647,18 @@ function renderPlan(op, editable){
     op.plan = { ...(op.plan||{}), [list]: arr };
     await persistPlan(op);
     renderPlan(op, editable);
+  }));
+
+  $$('[data-op-role]').forEach(inp => inp.addEventListener('blur', async () => {
+    const memberId = inp.dataset.opRole;
+    const role = inp.value.trim() || null;
+    await supabaseClient.from('operation_operators').upsert({
+      operation_id: currentOpId,
+      member_id: memberId,
+      role
+    }, { onConflict: 'operation_id,member_id' });
+    const { data: refreshed } = await supabaseClient.from('operation_operators').select('*').eq('operation_id', currentOpId);
+    currentOperatorsCache = refreshed || [];
   }));
 
   const completeBtn = $('#completeOpBtn');
@@ -1709,6 +1795,30 @@ function analyzeDebrief(op){
   const summary = [d.outcome || 'Outcome not yet documented.', (d.lessonsLearned||'').trim() ? `Key takeaway: ${d.lessonsLearned}` : ''].filter(Boolean).join(' ');
   return { flags, summary };
 }
+function planVal(op, key, fallback){
+  const p = op.plan || {};
+  return (p[key] || fallback || '').trim();
+}
+function packetTables(op){
+  const p = op.plan || {};
+  return {
+    agencies: Array.isArray(p.agencies) ? p.agencies : [],
+    suspects: Array.isArray(p.suspects) ? p.suspects : [],
+    vehicles: Array.isArray(p.vehicles) ? p.vehicles : [],
+    assisting: Array.isArray(p.assisting) ? p.assisting : [],
+    hospitals: Array.isArray(p.hospitals) ? p.hospitals : [],
+    stacks: Array.isArray(op.map_stacks) ? op.map_stacks : [],
+    markers: Array.isArray(op.map_markers) ? op.map_markers : [],
+  };
+}
+function htmlRows(headers, rows, cells){
+  if(!rows.length) return '';
+  return `<table style="width:100%; border-collapse:collapse; font-size:13px; margin:8px 0 16px;">
+    <tr>${headers.map(h=>`<th style="text-align:left;border-bottom:1px solid #ccc;padding:4px 6px;">${h}</th>`).join('')}</tr>
+    ${rows.map(r => `<tr>${cells(r).map(c=>`<td style="border-bottom:1px solid #eee;padding:4px 6px;">${c||''}</td>`).join('')}</tr>`).join('')}
+  </table>`;
+}
+
 async function printOpReport(op, operators){
   const w = window.open('', '_blank'); // open synchronously first — avoids the same popup-blocker issue fixed earlier for Signal group sends
   const { data: photos } = await supabaseClient.from('operation_photos').select('*').eq('operation_id', op.id).order('created_at');
@@ -1721,21 +1831,58 @@ async function printOpReport(op, operators){
     ? `<h3>Target Location Photos</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">${photosWithUrls.map(p => `<a href="${p.url}" target="_blank"><img src="${p.url}" style="width:160px; height:160px; object-fit:cover; border-radius:4px; cursor:pointer;"></a>`).join('')}</div>`
     : '';
 
-  const rosterLines = operators.map(o => { const m = memberById(o.member_id); return m ? `<div>${m.name} — ${m.team_role||''}</div>` : ''; }).join('');
+  const t = packetTables(op);
+  const rosterLines = operators.map(o => {
+    const m = memberById(o.member_id);
+    return m ? `<div>${m.name} — ${o.role || m.team_role||''} — ${m.callsign || m.unit_number || ''}</div>` : '';
+  }).join('');
+  const stackLines = t.stacks.map(st => {
+    const names = (st.members||[]).map(mem => { const m = memberById(mem.member_id); return m ? m.name : ''; }).filter(Boolean).join(', ');
+    return `<div><strong>${st.name||'Stack'}</strong>${st.lat?` @ ${Number(st.lat).toFixed(5)}, ${Number(st.lng).toFixed(5)}`:''} — ${names||'empty'}</div>`;
+  }).join('');
+  const markLines = t.markers.map(mk => `<div>${mk.type||'mark'} — ${mk.label||''}${mk.lat?` @ ${Number(mk.lat).toFixed(5)}, ${Number(mk.lng).toFixed(5)}`:''}</div>`).join('');
   const commander = op.incident_commander_personnel_id ? memberById(op.incident_commander_personnel_id) : null;
+  const p = op.plan || {};
+  const block = (title, body) => body ? `<h3>${title}</h3><p style="white-space:pre-wrap;">${body}</p>` : '';
   w.document.write(`
-    <html><head><title>${op.name}</title><style>@media print{.no-print{display:none!important;}}</style></head>
+    <html><head><title>${op.name}</title><style>@media print{.no-print{display:none!important;}} h1,h3{font-family:sans-serif;} body{max-width:800px;margin:0 auto;}</style></head>
     <body style="font-family:sans-serif; padding:40px; color:#111;">
       <button class="no-print" onclick="window.close()" style="position:fixed; top:16px; right:16px; padding:10px 18px; background:#0c0e0c; color:#e8e6df; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; z-index:10;">✕ Close & Return to OpsTac</button>
       ${window._agencyPatchUrl ? `<img src="${window._agencyPatchUrl}" style="height:64px; margin-bottom:12px;">` : ''}
-      <h1>${op.name}</h1>
-      <p>${op.type||''} · ${op.status} · ${op.date||''} · ${op.location||''}</p>
+      <h1>Tactical Operation Plan</h1>
+      <p><strong>${op.name}</strong><br>${op.type||''} · ${op.status} · ${op.date||''}<br>${op.location||''}</p>
       ${currentAgency && currentAgency.name ? `<p><strong>${currentAgency.name}</strong></p>` : ''}
-      ${commander ? `<p><strong>Overall Command:</strong> ${commander.name}</p>` : ''}
-      <h3>Operators</h3>${rosterLines || '<p>None assigned.</p>'}
+      <p>Brief: ${p.briefDateTime||'—'} · ${p.briefingLocation||'—'}<br>
+      Case agent: ${p.caseAgent||'—'} · Case #: ${p.caseNumber||'—'}<br>
+      ${commander ? `Overall Command: ${commander.name}<br>` : ''}
+      Prepared by: ${p.completedBy||'—'} ${p.completedDate||''} · Approved by: ${p.approvedBy||'—'} ${p.approvedDate||''}</p>
+      ${block('Situation / Background', p.situation || p.objective)}
+      <h3>Agencies / Divisions</h3>
+      ${htmlRows(['Agency','Division','POC'], t.agencies.filter(r=>r.agency||r.unit||r.poc), r=>[r.agency,r.unit,r.poc]) || '<p>—</p>'}
+      ${block('Location description', p.locationDescription)}
       ${photosHtml}
-      <h3>Pre-Ops Plan</h3>
-      ${PLAN_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.plan||{})[f.key] || '—'}</p>`).join('')}
+      <h3>Suspect(s)</h3>
+      ${htmlRows(['Name','Race/sex','DOB','Ht','Wt','History'], t.suspects.filter(r=>r.name||r.history), r=>[r.name,r.raceSex,r.dob,r.height,r.weight,r.history]) || '<p>—</p>'}
+      <h3>Vehicle(s)</h3>
+      ${htmlRows(['Year','Color','Make','Owner','Tag'], t.vehicles.filter(r=>r.make||r.tag||r.color), r=>[r.year,r.color,r.make,r.owner,r.tag]) || '<p>—</p>'}
+      <h3>Operational personnel</h3>${rosterLines || '<p>None assigned.</p>'}
+      <h3>Stacks</h3>${stackLines || '<p>None.</p>'}
+      <h3>Map marks</h3>${markLines || '<p>None.</p>'}
+      <h3>Assisting personnel</h3>
+      ${htmlRows(['Name','Agency','Assignment'], t.assisting.filter(r=>r.name), r=>[r.name,r.agency,r.assignment]) || '<p>—</p>'}
+      ${block('Tactical plan and execution', p.execution || p.approach)}
+      ${block('Signal and command', p.signalCommand || p.comms)}
+      ${block('Obstacles and barriers', p.obstacles)}
+      ${block('Attachments and detachments', p.attachmentsDetachments)}
+      <h3>Medical</h3>
+      ${htmlRows(['Facility','Address','Phone'], t.hospitals.filter(r=>r.name), r=>[r.name,r.address,r.phone]) || ''}
+      <p>EMS notified: ${p.wemaNotified||'—'} · Staging: ${p.wemaStaging||'—'}<br>
+      Air unit: ${p.lifelightNotified||'—'} · LZ: ${p.landingZone||'—'}<br>
+      Evac: ${p.medevac||'—'}</p>
+      ${block("Commander's intent", p.commandersIntent)}
+      ${p.trackPlan ? `<h3>Track / route</h3><p><a href="${p.trackPlan}">${p.trackPlan}</a></p>` : ''}
+      ${block('Additional notes', p.additionalNotes || p.contingencies)}
+      ${PLAN_FIELDS.map(f => p[f.key] && !['objective','approach','comms','contingencies'].includes(f.key) ? `<p><strong>${f.label}:</strong> ${p[f.key]}</p>` : '').join('')}
       ${op.status==='complete' ? `<h3>Debrief</h3>${DEBRIEF_FIELDS.map(f => `<p><strong>${f.label}:</strong> ${(op.debrief||{})[f.key] || '—'}</p>`).join('')}` : ''}
     </body></html>
   `);
@@ -1796,16 +1943,54 @@ async function exportOpPresentation(op, operators){
     slide.addText('Operators', { x: MARGIN, y, fontSize: 13, bold: true, color: 'a89968' }); y += 0.4;
     operators.forEach(o => {
       const m = memberById(o.member_id);
-      if(m){ slide.addText(`${m.name} — ${m.team_role||''}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.32; }
+      if(m){ slide.addText(`${m.name} — ${o.role || m.team_role||''} — ${m.callsign || m.unit_number || ''}`, { x: MARGIN+0.2, y, fontSize: 12, color: 'e8e6df' }); y += 0.32; }
     });
 
-    PLAN_FIELDS.forEach(f => {
-      const text = (op.plan||{})[f.key];
-      if(!text) return;
+    const addPacketSlide = (title, body) => {
+      if(!body) return;
       const s = pres.addSlide();
       s.background = { color: '0c0e0c' };
-      s.addText(f.label, { x: MARGIN, y: 0.3, fontSize: 26, bold: true, color: 'c7b482' });
-      s.addText(text, { x: MARGIN, y: 1.1, w: W-MARGIN*2, h: 4, fontSize: 14, color: 'e8e6df', valign: 'top' });
+      if(window._agencyPatchUrl) try { s.addImage({ path: window._agencyPatchUrl, x: 9.1, y: 0.18, w: 0.55, h: 0.55 }); } catch(e){}
+      s.addText(title, { x: MARGIN, y: 0.28, fontSize: 22, bold: true, color: 'c7b482' });
+      s.addText(String(body), { x: MARGIN, y: 0.95, w: W-MARGIN*2, h: 4.3, fontSize: 14, color: 'e8e6df', valign: 'top' });
+    };
+    const addListSlide = (title, lines) => {
+      const clean = (lines||[]).filter(Boolean);
+      if(!clean.length) return;
+      const s = pres.addSlide();
+      s.background = { color: '0c0e0c' };
+      s.addText(title, { x: MARGIN, y: 0.28, fontSize: 22, bold: true, color: 'c7b482' });
+      let yy = 0.95;
+      clean.slice(0,12).forEach(line => {
+        s.addText(String(line), { x: MARGIN, y: yy, w: W-MARGIN*2, fontSize: 13, color: 'e8e6df' });
+        yy += 0.34;
+      });
+    };
+    const pk = op.plan || {};
+    const tb = packetTables(op);
+    addPacketSlide('Situation / Background', pk.situation || pk.objective);
+    addListSlide('Agencies', tb.agencies.filter(r=>r.agency).map(r => `${r.agency} — ${r.unit||''} — ${r.poc||''}`));
+    addPacketSlide('Location', pk.locationDescription);
+    addListSlide('Suspects', tb.suspects.filter(r=>r.name).map(r => `${r.name}  ${r.raceSex||''}  ${r.dob||''}  ${r.height||''} ${r.weight||''}  ${r.history||''}`));
+    addListSlide('Vehicles', tb.vehicles.filter(r=>r.make||r.tag||r.color).map(r => [r.year,r.color,r.make,r.owner,r.tag].filter(Boolean).join(' · ')));
+    addListSlide('Assisting', tb.assisting.filter(r=>r.name).map(r => `${r.name} — ${r.agency||''} — ${r.assignment||''}`));
+    addListSlide('Stacks', tb.stacks.map(st => {
+      const names = (st.members||[]).map(mem => { const m = memberById(mem.member_id); return m ? m.name : ''; }).filter(Boolean).join(', ');
+      return `${st.name||'Stack'}: ${names||'empty'}`;
+    }));
+    addListSlide('Map marks', tb.markers.map(mk => `${mk.type||'mark'} — ${mk.label||''}`));
+    addPacketSlide('Tactical plan and execution', pk.execution || pk.approach);
+    addPacketSlide('Signal and command', pk.signalCommand || pk.comms);
+    addPacketSlide('Obstacles and barriers', pk.obstacles);
+    addPacketSlide('Attachments and detachments', pk.attachmentsDetachments);
+    addPacketSlide("Commander's intent", pk.commandersIntent);
+    addPacketSlide('Medical / evac', [pk.medevac, pk.wemaNotified && ('EMS: '+pk.wemaNotified), pk.landingZone && ('LZ: '+pk.landingZone), ...tb.hospitals.filter(h=>h.name).map(h => `${h.name} ${h.address||''}`)].filter(Boolean).join('\n'));
+    addPacketSlide('Track / route', pk.trackPlan);
+    addPacketSlide('Additional notes', pk.additionalNotes || pk.contingencies);
+    addPacketSlide('Prepared / approved', [pk.completedBy && ('Prepared by '+pk.completedBy+' '+ (pk.completedDate||'')), pk.approvedBy && ('Approved by '+pk.approvedBy+' '+(pk.approvedDate||''))].filter(Boolean).join('\n'));
+    PLAN_FIELDS.forEach(f => {
+      if(['objective','approach','comms','contingencies'].includes(f.key)) return;
+      addPacketSlide(f.label, pk[f.key]);
     });
 
     const { data: linkedEquip } = await supabaseClient.from('operation_equipment').select('equipment_id').eq('operation_id', op.id);
@@ -2436,13 +2621,21 @@ async function geocodeAddress(q){
   return null;
 }
 
-function liveGlyph(shape, label){
-  const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a';
+function liveGlyph(shape, label, accent){
+  const s = '#e8e6df', a = '#b59a4d', r = '#c45c5c', b = '#7ec8e3', g = '#6b9a5f', y = '#e4c35a', o = '#d18a3a';
   if(shape === 'ems' || shape === 'medic'){
     return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#1a1212" stroke="${r}" stroke-width="2"/><rect x="14" y="8" width="4" height="16" fill="${r}"/><rect x="8" y="14" width="16" height="4" fill="${r}"/></svg>`;
   }
   if(shape === 'vehicle'){
-    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/><path d="M8 20 h16 l-3-8 h-10 z" fill="none" stroke="${a}" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="21" r="1.6" fill="${a}"/><circle cx="20" cy="21" r="1.6" fill="${a}"/></svg>`;
+    const c = accent || a;
+    const t = String(label||'').slice(0,8);
+    return `<svg viewBox="0 0 40 36" width="36" height="32"><rect x="1" y="1" width="38" height="24" rx="3" fill="#141814" stroke="${c}" stroke-width="2"/><path d="M8 18 h24 l-3-8 h-18 z" fill="${c}" fill-opacity=".35" stroke="${c}" stroke-width="1.6"/><circle cx="13" cy="19" r="1.7" fill="${c}"/><circle cx="27" cy="19" r="1.7" fill="${c}"/><text x="20" y="33" text-anchor="middle" font-size="7" font-weight="700" fill="${c}" font-family="Inter,sans-serif">${t}</text></svg>`;
+  }
+  if(shape === 'target'){
+    return `<svg viewBox="0 0 32 32" width="30" height="30"><circle cx="16" cy="16" r="13" fill="#1a1010" stroke="${r}" stroke-width="2"/><circle cx="16" cy="16" r="7" fill="none" stroke="${r}" stroke-width="1.6"/><circle cx="16" cy="16" r="2.2" fill="${r}"/><path d="M16 3 v5 M16 24 v5 M3 16 h5 M24 16 h5" stroke="${r}" stroke-width="1.6"/></svg>`;
+  }
+  if(shape === 'breach'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#1a140e" stroke="${o}" stroke-width="2"/><path d="M10 24 V8 h9 a4 4 0 0 1 0 16 H10z" fill="none" stroke="${o}" stroke-width="2"/><circle cx="21" cy="16" r="1.4" fill="${o}"/></svg>`;
   }
   if(shape === 'lz'){
     return `<svg viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="16" r="13" fill="#0c1a1e" stroke="${b}" stroke-width="2"/><path d="M11 9 v14 M21 9 v14 M11 16 h10" stroke="${b}" stroke-width="2.4" fill="none" stroke-linecap="square"/></svg>`;
@@ -2456,8 +2649,11 @@ function liveGlyph(shape, label){
   if(shape === 'staging'){
     return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${a}" stroke-width="2"/><rect x="8" y="8" width="16" height="16" fill="none" stroke="${a}" stroke-width="2" stroke-dasharray="3 2"/></svg>`;
   }
-  if(shape === 'stack' || shape === 'entry'){
+  if(shape === 'stack'){
     return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${y}" stroke-width="2"/><circle cx="16" cy="9" r="2.4" fill="${y}"/><circle cx="16" cy="16" r="2.4" fill="${y}"/><circle cx="16" cy="23" r="2.4" fill="${y}"/></svg>`;
+  }
+  if(shape === 'entry'){
+    return `<svg viewBox="0 0 32 32" width="28" height="28"><rect x="2" y="2" width="28" height="28" rx="3" fill="#141814" stroke="${y}" stroke-width="2"/><path d="M8 16 h10 M14 11 l6 5 -6 5" fill="none" stroke="${y}" stroke-width="2.2" stroke-linejoin="round"/><path d="M22 8 v16" stroke="${y}" stroke-width="2"/></svg>`;
   }
   if(shape === 'person'){
     const t = String(label||'?').slice(0,6);
@@ -2470,7 +2666,7 @@ function liveIcon(label, color, rot, shape){
   const deg = Number(rot||0);
   return L.divIcon({
     className: 'live-map-icon',
-    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape, label)}</div>`,
+    html: `<div style="transform:translate(-50%,-50%) rotate(${deg}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));">${liveGlyph(shape, label, color)}</div>`,
     iconSize:[0,0], iconAnchor:[0,0]
   });
 }
@@ -2483,11 +2679,13 @@ function dashIcon(label, color){
     iconSize:[0,0], iconAnchor:[0,0]
   });
 }
-function colorFor(type){
+function colorFor(type, extra){
+  if(type==='target') return '#c45c5c';
+  if(type==='breach') return '#d18a3a';
   if(type==='ems'||type==='medic') return '#c45c5c';
   if(type==='lz') return '#7ec8e3';
-  if(type==='vehicle') return '#8fbf88';
-  if(type==='person') return '#e4c35a';
+  if(type==='vehicle') return extra || '#8fbf88';
+  if(type==='person' || type==='entry') return '#e4c35a';
   return '#d4b86a';
 }
 async function saveDashMarkers(markers){
@@ -2514,6 +2712,23 @@ function initDashLiveMap(op){
   const inp = document.getElementById('dashMapAddress');
   if(go) go.onclick = () => focusDashOp({ ...currentOpCache, location: inp && inp.value });
   if(inp) inp.addEventListener('keydown', (e) => { if(e.key==='Enter') focusDashOp({ ...currentOpCache, location: inp.value }); });
+  const trackInp = document.getElementById('dashTrackPlan');
+  const trackOpen = document.getElementById('dashTrackOpen');
+  const trackSave = document.getElementById('dashTrackSave');
+  async function saveTrackPlan(){
+    if(!currentOpCache) return;
+    const url = (trackInp && trackInp.value || '').trim();
+    currentOpCache.plan = { ...(currentOpCache.plan||{}), trackPlan: url };
+    await supabaseClient.from('operations').update({ plan: currentOpCache.plan }).eq('id', currentOpId);
+  }
+  if(trackSave) trackSave.onclick = saveTrackPlan;
+  if(trackInp) trackInp.addEventListener('blur', saveTrackPlan);
+  if(trackOpen) trackOpen.onclick = () => {
+    const url = (trackInp && trackInp.value || (currentOpCache.plan && currentOpCache.plan.trackPlan) || '').trim();
+    if(!url){ alert('Paste a route link first.'); return; }
+    const href = /^https?:\/\//i.test(url) ? url : ('https://' + url);
+    window.open(href, '_blank', 'noopener');
+  };
   
   const lockBtn = document.getElementById('dashMapLock');
   if(lockBtn){
@@ -2586,7 +2801,9 @@ async function onDashMapClick(e){
   if(dashPlaceMode){
     const markers = currentOpCache.map_markers || [];
     const meta = DASH_LOCS.find(l => l.type === dashPlaceMode) || { type: dashPlaceMode, label: dashPlaceMode };
-    markers.push({ id: Date.now().toString(36), type: meta.type, label: meta.label, lat, lng });
+    const extra = askMarkerMeta(meta.type, meta.label);
+    if(!extra){ dashPlaceMode = null; renderMapPalette(currentOpCache, currentOperatorsCache, true); return; }
+    markers.push({ id: Date.now().toString(36), type: meta.type, label: extra.label || meta.label, color: extra.color || null, lat, lng });
     await saveDashMarkers(markers);
     dashPlaceMode = null;
     rebuildDashMarkers(currentOpCache);
@@ -2621,7 +2838,7 @@ function rebuildDashMarkers(op){
   const editable = canEditOps();
   (op.map_markers||[]).forEach(mk => {
     if(mk.lat == null) return;
-    const m = L.marker([mk.lat, mk.lng], { icon: liveIcon(mk.label||mk.type, colorFor(mk.type), mk.rot, mk.type==='medic'?'ems':mk.type), draggable: editable });
+    const m = L.marker([mk.lat, mk.lng], { icon: liveIcon(mk.label||mk.type, colorFor(mk.type, mk.color), mk.rot, mk.type==='medic'?'ems':mk.type), draggable: editable });
     m.on('click', () => { dashSelected = { kind:'marker', id: mk.id }; const r=document.getElementById('dashRotate'); if(r){ r.value=String(mk.rot||0); document.getElementById('dashRotateDeg').textContent=(mk.rot||0)+'°'; } });
     m.bindPopup(`${mk.label||mk.type}<br><button type="button" class="btn btn-danger-outline" data-rm-marker="${mk.id}" style="margin-top:6px; font-size:11px;">Remove</button>`);
     m.on('popupopen', () => {
